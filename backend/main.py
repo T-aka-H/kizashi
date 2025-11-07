@@ -14,6 +14,7 @@ from gemini_analyzer import GeminiAnalyzer
 from gemini_researcher import GeminiResearcher
 from twitter_poster import SocialPoster
 from article_fetcher import ArticleFetcher, RSSFeedManager, get_default_feed_manager
+from url_shortener import URLShortener
 from models import Article, PostQueue
 
 # FastAPIアプリ初期化
@@ -48,6 +49,9 @@ except Exception as e:
 # 記事取得のインスタンス
 article_fetcher = ArticleFetcher()
 feed_manager = get_default_feed_manager()
+
+# URL短縮のインスタンス
+url_shortener = URLShortener()
 
 
 # Pydanticモデル
@@ -138,8 +142,10 @@ async def analyze_article_endpoint(
     
     # 投稿候補の場合、キューに追加
     if analysis.get("should_post", False):
+        # URLを短縮
+        short_url = url_shortener.shorten(article.url)
         tweet_text = analyzer.generate_tweet_text(
-            article.title, analysis.get("summary"), analysis.get("theme"), article.url
+            article.title, analysis.get("summary"), analysis.get("theme"), short_url
         )
         add_to_post_queue(db, article_id, tweet_text)
     
@@ -369,8 +375,10 @@ async def fetch_by_research(
                 analyzed_count += 1
                 
                 # 投稿テキストを生成（未来の兆しを含める）
+                # URLを短縮
+                short_url = url_shortener.shorten(url)
                 future_signal = article_data.get('future_signal', '')
-                post_text = f"{title}\n\n{article_data.get('summary', '')}\n\n🔮 未来の兆し: {future_signal}\n\n{url}"
+                post_text = f"{title}\n\n{article_data.get('summary', '')}\n\n🔮 未来の兆し: {future_signal}\n\n{short_url}"
                 add_to_post_queue(db, article.id, post_text)
                 queued_count += 1
             else:
@@ -382,8 +390,10 @@ async def fetch_by_research(
                     
                     # 投稿候補の場合、キューに追加
                     if analysis.get("should_post", False):
+                        # URLを短縮
+                        short_url = url_shortener.shorten(url)
                         tweet_text = analyzer.generate_tweet_text(
-                            title, analysis.get("summary"), analysis.get("theme"), url
+                            title, analysis.get("summary"), analysis.get("theme"), short_url
                         )
                         add_to_post_queue(db, article.id, tweet_text)
                         queued_count += 1
@@ -447,8 +457,10 @@ async def fetch_and_analyze(
                 
                 # 投稿候補の場合、キューに追加
                 if analysis.get("should_post", False):
+                    # URLを短縮
+                    short_url = url_shortener.shorten(url)
                     tweet_text = analyzer.generate_tweet_text(
-                        title, analysis.get("summary"), analysis.get("theme"), url
+                        title, analysis.get("summary"), analysis.get("theme"), short_url
                     )
                     add_to_post_queue(db, article.id, tweet_text)
                     queued_count += 1
