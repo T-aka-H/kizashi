@@ -11,7 +11,7 @@ from datetime import datetime
 from database import get_db, init_db, create_article, get_article_by_url, update_article_analysis
 from database import add_to_post_queue, get_pending_posts
 from gemini_analyzer import GeminiAnalyzer
-from gemini_researcher import GeminiResearcher
+from openai_researcher import OpenAIResearcher
 from twitter_poster import SocialPoster
 from article_fetcher import ArticleFetcher, RSSFeedManager, get_default_feed_manager
 from url_shortener import URLShortener
@@ -41,9 +41,9 @@ init_db()
 # アナライザーとポスターのインスタンス
 analyzer = GeminiAnalyzer()
 try:
-    researcher = GeminiResearcher()
+    researcher = OpenAIResearcher()
 except Exception as e:
-    print(f"⚠️ GeminiResearcher初期化エラー: {e}")
+    print(f"⚠️ OpenAIResearcher初期化エラー: {e}")
     researcher = None
 
 try:
@@ -343,9 +343,9 @@ async def fetch_by_research(
     request: ThemeResearchRequest,
     db: Session = Depends(get_db)
 ):
-    """Gemini DeepResearchを使用して記事を取得・分析"""
+    """OpenAI DeepResearchを使用して記事を取得・分析"""
     if not researcher:
-        raise HTTPException(status_code=503, detail="GeminiResearcherが初期化されていません")
+        raise HTTPException(status_code=503, detail="OpenAIResearcherが初期化されていません")
     
     try:
         # DeepResearchで記事を取得
