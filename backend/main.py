@@ -17,6 +17,8 @@ from article_fetcher import ArticleFetcher, RSSFeedManager, get_default_feed_man
 from url_shortener import URLShortener
 from auth import BasicAuthMiddleware, AUTH_ENABLED, verify_post_password
 from models import Article, PostQueue
+from scheduler import ArticleScheduler
+import threading
 
 # FastAPIアプリ初期化
 app = FastAPI(title="Weak Signals App", version="1.0.0")
@@ -51,6 +53,18 @@ try:
 except Exception as e:
     print(f"⚠️ ソーシャルポスター初期化エラー: {e}")
     poster = None
+
+# スケジューラーの初期化と起動（バックグラウンド）
+try:
+    scheduler = ArticleScheduler()
+    # スケジューラーをバックグラウンドスレッドで起動
+    scheduler_thread = threading.Thread(target=scheduler.run_scheduler, args=(15,), daemon=True)
+    scheduler_thread.start()
+    print("✅ スケジューラーをバックグラウンドで起動しました（15分間隔）")
+except Exception as e:
+    print(f"⚠️ スケジューラー起動エラー: {e}")
+    import traceback
+    traceback.print_exc()
 
 # 記事取得のインスタンス
 article_fetcher = ArticleFetcher()
