@@ -53,12 +53,22 @@ export default function PostApproval() {
   const handlePost = async (queueId: number) => {
     if (!confirm('このツイートを投稿しますか？')) return
 
+    // 投稿確認パスワードを入力
+    const confirmPassword = prompt('投稿確認パスワードを入力してください:')
+    if (!confirmPassword) {
+      return // キャンセルされた場合
+    }
+
     try {
-      const result = await queueApi.postTweet(queueId)
+      const result = await queueApi.postTweet(queueId, confirmPassword)
       alert(`投稿完了！ツイートID: ${result.tweet_id}`)
       loadQueue()
     } catch (err: any) {
-      alert(`投稿エラー: ${err.message}`)
+      if (err.response?.status === 403) {
+        alert('投稿パスワードが間違っています')
+      } else {
+        alert(`投稿エラー: ${err.message}`)
+      }
     }
   }
 

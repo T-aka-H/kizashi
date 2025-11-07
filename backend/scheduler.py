@@ -1,6 +1,7 @@
 """
 定期実行スケジューラー
 """
+import os
 import schedule
 import time
 from datetime import datetime
@@ -10,6 +11,9 @@ from database import SessionLocal, get_pending_posts
 from gemini_analyzer import GeminiAnalyzer
 from twitter_poster import SocialPoster
 from article_fetcher import RSSFeedManager, get_default_feed_manager
+
+# スケジューラーの無効化フラグ
+DISABLE_SCHEDULER = os.getenv("DISABLE_SCHEDULER", "").lower() == "true"
 
 
 class ArticleScheduler:
@@ -166,6 +170,11 @@ class ArticleScheduler:
         Args:
             interval_minutes: 実行間隔（分）
         """
+        # スケジューラーが無効化されている場合は終了
+        if DISABLE_SCHEDULER:
+            print("⚠️ スケジューラーは無効化されています（DISABLE_SCHEDULER=true）")
+            return
+        
         print(f"🕐 スケジューラー開始: {interval_minutes}分間隔")
         
         # スケジュール設定

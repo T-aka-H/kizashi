@@ -5,12 +5,61 @@ import axios from 'axios'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
+// Basic認証ヘッダーを生成
+const getAuthHeaders = () => {
+  if (typeof window === 'undefined') {
+    return { 'Content-Type': 'application/json' }
+  }
+  
+  const username = localStorage.getItem('auth_username') || ''
+  const password = localStorage.getItem('auth_password') || ''
+  
+  if (username && password) {
+    const token = btoa(`${username}:${password}`)
+    return {
+      'Authorization': `Basic ${token}`,
+      'Content-Type': 'application/json',
+    }
+  }
+  
+  return { 'Content-Type': 'application/json' }
+}
+
 const api = axios.create({
   baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',
   },
 })
+
+// リクエストインターセプターで認証ヘッダーを追加
+api.interceptors.request.use(
+  (config) => {
+    const authHeaders = getAuthHeaders()
+    config.headers = { ...config.headers, ...authHeaders }
+    return config
+  },
+  (error) => {
+    return Promise.reject(error)
+  }
+)
+
+// レスポンスインターセプターで401エラーを処理
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // 認証エラーの場合、認証情報をクリア
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('auth_username')
+        localStorage.removeItem('auth_password')
+        // ログインページにリダイレクト（必要に応じて）
+        // window.location.href = '/login'
+      }
+    }
+    return Promise.reject(error)
+  }
+)
 
 // 型定義
 export interface Article {
@@ -95,9 +144,11 @@ export const queueApi = {
     await api.post(`/post-queue/${queueId}/approve`)
   },
 
-  // 投稿実行
-  postTweet: async (queueId: number): Promise<{ message: string; tweet_id: string }> => {
-    const response = await api.post<{ message: string; tweet_id: string }>(`/post-queue/${queueId}/post`)
+  // 投稿実行（投稿確認パスワード必要）
+  postTweet: async (queueId: number, confirmPassword: string): Promise<{ message: string; tweet_id: string }> => {
+    const response = await api.post<{ message: string; tweet_id: string }>(`/post-queue/${queueId}/post`, {
+      confirm_password: confirmPassword,
+    })
     return response.data
   },
 }

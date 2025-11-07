@@ -15,10 +15,16 @@ from gemini_researcher import GeminiResearcher
 from twitter_poster import SocialPoster
 from article_fetcher import ArticleFetcher, RSSFeedManager, get_default_feed_manager
 from url_shortener import URLShortener
+from auth import BasicAuthMiddleware, AUTH_ENABLED, verify_post_password
 from models import Article, PostQueue
 
 # FastAPIアプリ初期化
 app = FastAPI(title="Weak Signals App", version="1.0.0")
+
+# Basic認証ミドルウェア（CORSより前に追加）
+if AUTH_ENABLED:
+    app.add_middleware(BasicAuthMiddleware)
+    print("🔐 Basic認証が有効です")
 
 # CORS設定
 app.add_middleware(
@@ -73,6 +79,10 @@ class URLFetchRequest(BaseModel):
 
 class ThemeResearchRequest(BaseModel):
     themes: str  # カンマ区切りのテーマリスト（例: "AI, ブロックチェーン, 量子コンピュータ"）
+
+
+class PostRequest(BaseModel):
+    confirm_password: str  # 投稿確認パスワード
 
 
 class ArticleResponse(BaseModel):
@@ -212,11 +222,16 @@ async def approve_post(
 @app.post("/post-queue/{queue_id}/post")
 async def post_to_social(
     queue_id: int,
+    request: PostRequest,
     db: Session = Depends(get_db)
 ):
-    """ソーシャルメディアに投稿"""
+    """ソーシャルメディアに投稿（投稿確認パスワード必要）"""
     if not poster:
         raise HTTPException(status_code=503, detail="ソーシャルメディア設定がありません")
+    
+    # 投稿確認パスワードを検証
+    if not verify_post_password(request.confirm_password):
+        raise HTTPException(status_code=403, detail="投稿パスワードが間違っています")
     
     queue_item = db.query(PostQueue).filter(PostQueue.id == queue_id).first()
     if not queue_item:
