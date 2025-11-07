@@ -46,45 +46,36 @@ class GeminiResearcher:
         genai.configure(api_key=self.api_key)
         
         # Grounding (Google Search) を有効にする
-        # 最新バージョン（0.8.5）に対応した方法を試す
+        # 最新バージョン（0.8.5）では Tool(google_search=GoogleSearch()) 形式が必須
         print("🔧 Google Search Groundingを初期化中...")
+        
         try:
-            if Tool and GoogleSearch:
-                # Tool と GoogleSearch を使用する方法
-                print("  → Tool/GoogleSearchクラスを使用")
-                google_search_tool = Tool(google_search=GoogleSearch())
-                self.model = genai.GenerativeModel(
-                    model,
-                    tools=[google_search_tool]
-                )
-                print("  ✅ Tool/GoogleSearchで初期化成功")
-            else:
-                # フォールバック: 辞書形式で指定
-                print("  → 辞書形式でGoogle Searchを有効化（フォールバック）")
-                self.model = genai.GenerativeModel(
-                    model,
-                    tools=[{"google_search_retrieval": {}}]
-                )
-                print("  ✅ 辞書形式で初期化成功")
+            # Tool と GoogleSearch を使用する (最新バージョンで推奨される唯一の方法)
+            if not Tool or not GoogleSearch:
+                # このケースは、ファイルの先頭のインポートが失敗した場合のみ発生
+                raise ImportError("Tool and GoogleSearch classes could not be imported. Please check google-generativeai version (>=0.5.0 required).")
+            
+            print("  → Tool/GoogleSearchクラスで初期化")
+            google_search_tool = Tool(google_search=GoogleSearch())
+            self.model = genai.GenerativeModel(
+                model,
+                tools=[google_search_tool]
+            )
+            print("  ✅ Tool/GoogleSearchで初期化成功")
+            
         except Exception as e:
-            print(f"⚠️ Tool/GoogleSearchの初期化エラー: {e}")
+            # 辞書形式はもはや受け付けられないため、失敗した場合は警告を出し、Groundingなしで続行
+            print(f"❌ 致命的な初期化エラー: Google Search Groundingを有効にできませんでした。")
+            print(f"   エラー: {e}")
             print(f"   エラータイプ: {type(e).__name__}")
             import traceback
             traceback.print_exc()
-            print("  → フォールバック: 辞書形式でGoogle Searchを有効化")
-            try:
-                # フォールバック: 辞書形式で指定
-                self.model = genai.GenerativeModel(
-                    model,
-                    tools=[{"google_search_retrieval": {}}]
-                )
-                print("  ✅ フォールバックで初期化成功")
-            except Exception as e2:
-                print(f"❌ フォールバックも失敗: {e2}")
-                # 最後の手段: toolsなしでモデルを作成
-                print("  → toolsなしでモデルを作成（Grounding無効）")
-                self.model = genai.GenerativeModel(model)
-                print("  ⚠️ 警告: Google Search Groundingが無効です")
+            
+            # Groundingなしでモデルを初期化し、実行時の400エラーを防ぐ（応急処置）
+            # 注意: この場合、Grounding機能は使用できません
+            print("  ⚠️ 警告: Google Search Groundingが無効です。Groundingなしでモデルを初期化します。")
+            self.model = genai.GenerativeModel(model)
+            print("  ⚠️ 注意: この状態ではGoogle Search機能は使用できません。")
         # リトライ設定
         self.max_retries = 3
         self.base_delay = 1.0  # 指数バックオフのベース遅延（秒）
