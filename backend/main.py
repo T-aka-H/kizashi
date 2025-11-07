@@ -11,6 +11,7 @@ from datetime import datetime
 from database import get_db, init_db, create_article, get_article_by_url, update_article_analysis
 from database import add_to_post_queue, get_pending_posts
 from gemini_analyzer import GeminiAnalyzer
+from gemini_researcher import GeminiResearcher
 from twitter_poster import SocialPoster
 from article_fetcher import ArticleFetcher, RSSFeedManager, get_default_feed_manager
 from models import Article, PostQueue
@@ -32,6 +33,12 @@ init_db()
 
 # アナライザーとポスターのインスタンス
 analyzer = GeminiAnalyzer()
+try:
+    researcher = GeminiResearcher()
+except Exception as e:
+    print(f"⚠️ GeminiResearcher初期化エラー: {e}")
+    researcher = None
+
 try:
     poster = SocialPoster()
 except Exception as e:
@@ -58,6 +65,10 @@ class RSSFeedRequest(BaseModel):
 
 class URLFetchRequest(BaseModel):
     urls: List[str]
+
+
+class ThemeResearchRequest(BaseModel):
+    themes: str  # カンマ区切りのテーマリスト（例: "AI, ブロックチェーン, 量子コンピュータ"）
 
 
 class ArticleResponse(BaseModel):
@@ -304,6 +315,90 @@ async def fetch_from_url(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"取得エラー: {str(e)}")
+
+
+@app.post("/fetch/research")
+async def fetch_by_research(
+    request: ThemeResearchRequest,
+    db: Session = Depends(get_db)
+):
+    """Gemini DeepResearchを使用して記事を取得・分析"""
+    if not researcher:
+        raise HTTPException(status_code=503, detail="GeminiResearcherが初期化されていません")
+    
+    try:
+        # DeepResearchで記事を取得
+        articles = researcher.fetch_articles_by_themes(request.themes)
+        
+        processed_count = 0
+        analyzed_count = 0
+        queued_count = 0
+        
+        for article_data in articles:
+            url = article_data['url']
+            title = article_data['title']
+            content = article_data.get('content', '')
+            
+            # 既存チェック
+            existing = get_article_by_url(db, url)
+            if existing:
+                continue
+            
+            # 記事作成
+            article = create_article(
+                db,
+                url,
+                title,
+                content,
+                article_data.get('published_at')
+            )
+            processed_count += 1
+            
+            # テーマが既に設定されている場合はそのまま使用、なければ分析
+            if article_data.get('theme'):
+                # DeepResearchで既にテーマが設定されている場合
+                analysis = {
+                    "theme": article_data.get('theme'),
+                    "summary": article_data.get('summary', ''),
+                    "key_points": '[]',
+                    "sentiment_score": 0.7,  # Weak Signalなので中立的に高め
+                    "relevance_score": 0.9,  # Weak Signalなので関連性が高い
+                    "should_post": True  # Weak Signalなので投稿候補
+                }
+                update_article_analysis(db, article.id, analysis)
+                analyzed_count += 1
+                
+                # 投稿テキストを生成（未来の兆しを含める）
+                future_signal = article_data.get('future_signal', '')
+                post_text = f"{title}\n\n{article_data.get('summary', '')}\n\n🔮 未来の兆し: {future_signal}\n\n{url}"
+                add_to_post_queue(db, article.id, post_text)
+                queued_count += 1
+            else:
+                # テーマが設定されていない場合は分析を実行
+                try:
+                    analysis = analyzer.analyze_article(title, content, url)
+                    update_article_analysis(db, article.id, analysis)
+                    analyzed_count += 1
+                    
+                    # 投稿候補の場合、キューに追加
+                    if analysis.get("should_post", False):
+                        tweet_text = analyzer.generate_tweet_text(
+                            title, analysis.get("summary"), analysis.get("theme"), url
+                        )
+                        add_to_post_queue(db, article.id, tweet_text)
+                        queued_count += 1
+                except Exception as e:
+                    print(f"分析エラー: {e}")
+                    continue
+        
+        return {
+            "message": "DeepResearch取得・分析完了",
+            "processed": processed_count,
+            "analyzed": analyzed_count,
+            "queued": queued_count
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"エラー: {str(e)}")
 
 
 @app.post("/fetch/analyze")
