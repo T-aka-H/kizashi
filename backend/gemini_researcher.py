@@ -313,13 +313,18 @@ World Economic Forum — https://www.youtube.com/@WorldEconomicForum
         
         try:
             # Gemini APIでGoogle Search Groundingを使用
-            # toolsパラメータでGoogle Searchを有効化
             # 方式A: 呼び出し時だけtoolsを渡す（モデル作成時には渡さない）
+            # payload辞書を作成して、toolsを安全に追加
             tools = [{"google_search_retrieval": {}}]
-            response = self.model.generate_content(
-                contents=prompt,
-                tools=tools
-            )
+            payload = {
+                "contents": prompt,
+                "tools": tools
+            }
+            
+            # 再発防止ログ（デバッグ用）
+            print(f"🔍 generate_content呼び出し: keys={list(payload.keys())}")
+            
+            response = self.model.generate_content(**payload)
             
             # レスポンスからテキストを取得
             summary = response.text
@@ -357,6 +362,13 @@ World Economic Forum — https://www.youtube.com/@WorldEconomicForum
                 'prompt': prompt
             }
                 
+        except TypeError as e:
+            # toolsが二重に渡されている場合のエラーハンドリング
+            if "multiple values for keyword argument 'tools'" in str(e):
+                print(f"❌ エラー: toolsが二重に指定されています")
+                print(f"   詳細: {e}")
+                raise ValueError("Invalid request: tools specified multiple times. Please check generate_content call.")
+            raise
         except Exception as e:
             print(f"⚠️ Gemini Groundingエラー: {e}")
             import traceback
