@@ -105,7 +105,7 @@ class GeminiAnalyzer:
             url: 記事URL（短縮済み）
         
         Returns:
-            投稿用テキスト（300文字以内、Bluesky基準）
+            投稿用テキスト（280文字以内、URL含む）
         """
         prompt = f"""
 以下の情報から、ソーシャルメディア（Bluesky/X）に投稿するテキストを生成してください。
@@ -116,10 +116,10 @@ class GeminiAnalyzer:
 URL: {url or "なし"}
 
 要件:
-- 300文字以内（Bluesky基準）
+- 280文字以内（URLを含む）
 - ハッシュタグを1-2個含める
 - 興味を引く書き出し
-- URLがある場合は必ず最後に含める（短縮リンク）
+- URLがある場合は必ず含める（短縮リンク）
 - 日本語で記述
 
 投稿テキストのみを出力してください（余計な説明は不要）:
@@ -129,38 +129,63 @@ URL: {url or "なし"}
             response = self.model.generate_content(prompt)
             tweet_text = response.text.strip()
             
-            # URLが含まれていない場合、最後に追加
+            # URLが含まれていない場合、追加（未来の兆しの前）
             if url and url not in tweet_text:
-                tweet_text = f"{tweet_text}\n\n{url}"
-            
-            # 300文字制限（Bluesky基準）
-            if len(tweet_text) > 300:
-                # URLを保持しつつ、本文を短縮
-                if url and url in tweet_text:
-                    url_part = f"\n\n{url}"
-                    max_body_length = 300 - len(url_part)
-                    body_part = tweet_text.replace(url_part, "")
-                    if len(body_part) > max_body_length:
-                        body_part = body_part[:max_body_length - 3] + "..."
-                    tweet_text = f"{body_part}{url_part}"
+                # 未来の兆しのマーカーを探す
+                if "🔮" in tweet_text or "未来" in tweet_text:
+                    # 未来の兆しの前にURLを挿入
+                    parts = tweet_text.split("🔮")
+                    if len(parts) > 1:
+                        tweet_text = f"{parts[0]}\n\n{url}\n\n🔮{parts[1]}"
+                    else:
+                        # 🔮がない場合は最後に追加
+                        tweet_text = f"{tweet_text}\n\n{url}"
                 else:
-                    tweet_text = tweet_text[:297] + "..."
+                    # 未来の兆しがない場合は最後に追加
+                    tweet_text = f"{tweet_text}\n\n{url}"
+            
+            # 280文字制限（URLを含む）
+            if len(tweet_text) > 280:
+                # URLを抽出
+                url_part = ""
+                if url and url in tweet_text:
+                    url_part = url
+                    tweet_text_without_url = tweet_text.replace(url, "").replace("\n\n\n", "\n\n")
+                else:
+                    tweet_text_without_url = tweet_text
+                
+                # URLの長さを考慮して本文を調整
+                url_length = len(url_part) + 2 if url_part else 0  # +2は改行分
+                max_body_length = 280 - url_length
+                
+                if len(tweet_text_without_url) > max_body_length:
+                    tweet_text_without_url = tweet_text_without_url[:max_body_length - 3] + "..."
+                
+                # URLを未来の兆しの前に配置
+                if "🔮" in tweet_text_without_url:
+                    parts = tweet_text_without_url.split("🔮")
+                    if len(parts) > 1:
+                        tweet_text = f"{parts[0]}\n\n{url_part}\n\n🔮{parts[1]}" if url_part else f"{parts[0]}\n\n🔮{parts[1]}"
+                    else:
+                        tweet_text = f"{tweet_text_without_url}\n\n{url_part}" if url_part else tweet_text_without_url
+                else:
+                    tweet_text = f"{tweet_text_without_url}\n\n{url_part}" if url_part else tweet_text_without_url
             
             return tweet_text
             
         except Exception as e:
             print(f"⚠️ ツイート生成エラー: {e}")
-            # フォールバック（URLを必ず含める）
-            fallback = f"📰 {title}\n\n{summary[:200]}"
+            # フォールバック（URLを必ず含める、280文字以内）
             if url:
-                fallback += f"\n\n{url}"
+                url_length = len(url) + 2  # +2は改行分
+                max_summary_length = 280 - len(title) - url_length - 10  # 余裕を持たせる
+                fallback = f"📰 {title}\n\n{summary[:max_summary_length]}"
+                if len(fallback) + url_length > 280:
+                    fallback = f"📰 {title}\n\n{summary[:max_summary_length - url_length - 3]}..."
+                fallback = f"{fallback}\n\n{url}"
             else:
-                fallback += "\n\n[リンクなし]"
-            # 300文字制限
-            if len(fallback) > 300:
-                max_length = 300 - len(url) - 3 if url else 297
-                fallback = f"📰 {title}\n\n{summary[:max_length]}..."
-                if url:
-                    fallback += f"\n\n{url}"
+                fallback = f"📰 {title}\n\n{summary[:250]}"
+                if len(fallback) > 280:
+                    fallback = fallback[:277] + "..."
             return fallback
 

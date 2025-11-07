@@ -378,7 +378,41 @@ async def fetch_by_research(
                 # URLを短縮
                 short_url = url_shortener.shorten(url)
                 future_signal = article_data.get('future_signal', '')
-                post_text = f"{title}\n\n{article_data.get('summary', '')}\n\n🔮 未来の兆し: {future_signal}\n\n{short_url}"
+                summary = article_data.get('summary', '')
+                
+                # 280文字以内に収める（URL含む）
+                # 構造: タイトル → 要約 → URL → 未来の兆し
+                url_length = len(short_url) + 2  # +2は改行分
+                future_label = "🔮 未来の兆し: "
+                future_length = len(future_label) + len(future_signal) + 2  # +2は改行分
+                title_length = len(title) + 2  # +2は改行分
+                
+                # 要約の最大長を計算
+                max_summary_length = 280 - title_length - url_length - future_length - 10  # 余裕を持たせる
+                
+                if max_summary_length < 0:
+                    # 文字数が足りない場合は要約を短縮
+                    max_summary_length = 50
+                
+                if len(summary) > max_summary_length:
+                    summary = summary[:max_summary_length - 3] + "..."
+                
+                # 投稿テキストを構築
+                post_text = f"{title}\n\n{summary}\n\n{short_url}\n\n{future_label}{future_signal}"
+                
+                # 最終チェック（280文字以内）
+                if len(post_text) > 280:
+                    # 未来の兆しを短縮
+                    remaining_length = 280 - len(f"{title}\n\n{summary}\n\n{short_url}\n\n{future_label}")
+                    if remaining_length > 0:
+                        future_signal = future_signal[:remaining_length - 3] + "..."
+                        post_text = f"{title}\n\n{summary}\n\n{short_url}\n\n{future_label}{future_signal}"
+                    else:
+                        # それでも長い場合は要約をさらに短縮
+                        max_summary_length = 280 - title_length - url_length - len(future_label) - 20
+                        summary = summary[:max_summary_length - 3] + "..."
+                        post_text = f"{title}\n\n{summary}\n\n{short_url}\n\n{future_label}{future_signal[:50]}"
+                
                 add_to_post_queue(db, article.id, post_text)
                 queued_count += 1
             else:
