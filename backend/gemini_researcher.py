@@ -316,13 +316,24 @@ World Economic Forum — https://www.youtube.com/@WorldEconomicForum
             # 方式A: 呼び出し時だけtoolsを渡す（モデル作成時には渡さない）
             # payload辞書を作成して、toolsを安全に追加
             tools = [{"google_search_retrieval": {}}]
-            payload = {
-                "contents": prompt,
-                "tools": tools
-            }
+            
+            # payloadを作成（他の引数がない場合は空辞書から開始）
+            payload = {"contents": prompt}
+            
+            # 念のため、既存のtoolsを削除（二重指定を防ぐ）
+            # モデル生成時にtoolsが設定されていないことを確認
+            if hasattr(self.model, '_tools') and self.model._tools:
+                print(f"⚠️ 警告: モデルに既にtoolsが設定されています。呼び出し時のtoolsを使用します。")
+            
+            # Groundingを使用する場合のみtoolsを追加
+            payload["tools"] = tools
             
             # 再発防止ログ（デバッグ用）
             print(f"🔍 generate_content呼び出し: keys={list(payload.keys())}")
+            
+            # ガード: toolsが二重に含まれていないか確認
+            if payload.get("tools") and hasattr(self.model, '_tools') and self.model._tools:
+                raise RuntimeError("tools would be passed twice: both in model and in payload")
             
             response = self.model.generate_content(**payload)
             
@@ -364,9 +375,12 @@ World Economic Forum — https://www.youtube.com/@WorldEconomicForum
                 
         except TypeError as e:
             # toolsが二重に渡されている場合のエラーハンドリング
-            if "multiple values for keyword argument 'tools'" in str(e):
+            error_msg = str(e)
+            if "multiple values for keyword argument 'tools'" in error_msg:
                 print(f"❌ エラー: toolsが二重に指定されています")
-                print(f"   詳細: {e}")
+                print(f"   詳細: {error_msg}")
+                print(f"   payload keys: {list(payload.keys()) if 'payload' in locals() else 'N/A'}")
+                # FastAPI側で400エラーとして返すため、ValueErrorを発生
                 raise ValueError("Invalid request: tools specified multiple times. Please check generate_content call.")
             raise
         except Exception as e:

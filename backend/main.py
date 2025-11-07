@@ -350,7 +350,18 @@ async def fetch_by_research(
     try:
         # DeepResearchで記事を取得
         articles = researcher.fetch_articles_by_themes(request.themes)
-        
+    except ValueError as e:
+        # toolsの二重指定などの実装ミスは400エラーとして返す
+        if "tools specified multiple times" in str(e):
+            raise HTTPException(status_code=400, detail=str(e))
+        raise
+    except RuntimeError as e:
+        # toolsが二重に渡される可能性がある場合
+        if "tools would be passed twice" in str(e):
+            raise HTTPException(status_code=400, detail="Invalid request: tools specified multiple times")
+        raise
+    
+    try:
         processed_count = 0
         analyzed_count = 0
         queued_count = 0
