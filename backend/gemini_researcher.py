@@ -314,9 +314,11 @@ World Economic Forum — https://www.youtube.com/@WorldEconomicForum
         try:
             # Gemini APIでGoogle Search Groundingを使用
             # toolsパラメータでGoogle Searchを有効化
+            # 方式A: 呼び出し時だけtoolsを渡す（モデル作成時には渡さない）
+            tools = [{"google_search_retrieval": {}}]
             response = self.model.generate_content(
-                prompt,
-                tools=[{"google_search_retrieval": {}}]
+                contents=prompt,
+                tools=tools
             )
             
             # レスポンスからテキストを取得
