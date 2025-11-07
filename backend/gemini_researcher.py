@@ -66,7 +66,12 @@ class GeminiResearcher:
 
 区切り線: テーマとテーマの間には、必ず区切り線 --- を挿入してください。
 
-件数: テーマ数 12件という選定総数（今回は{len(themes.split(','))}テーマなので{len(themes.split(',')) * 12}件）を厳守してください。
+件数: テーマ数 × 2件という選定総数（今回は{len(themes.split(','))}テーマなので{len(themes.split(',')) * 2}件）を厳守してください。
+
+【重要】件数が不足する場合の対応:
+- 実際に存在する記事が見つからない場合は、件数を減らしても構いません
+- 存在しない記事を創作して件数を満たすことは絶対に禁止です
+- 実在する記事のみを使用し、件数は実際に見つかった記事数で構いません
 
 禁止事項: 「レポート」形式での出力や、要約・序論・結論・考察といった指定外の文章は一切生成しないでください。挨拶も不要です。
 
@@ -98,6 +103,15 @@ X (旧Twitter): https://x.com/hriwsk
 
 5. クリップ対象ニュースの厳格な要件
 
+【最重要警告：FakeNewsの生成を絶対に禁止】
+
+⚠️ 絶対に守るべき原則：
+- 実際に存在する記事・動画のみを引用してください
+- 存在しない記事を創作・生成することは固く禁じます
+- 推測や想像に基づいた記事を作成しないでください
+- 実際にアクセス可能なURLのみを記載してください
+- 検証不可能な情報源は使用しないでください
+
 情報源: 必ず、後述の【指定メディアリスト】から記事を優先的に選択してください。
 
 ※以下のようなソースは使用禁止とします：
@@ -108,11 +122,25 @@ X (旧Twitter): https://x.com/hriwsk
 
 鮮度: 掲載・公開日が現在から3ヶ月以内の最新ニュースに限定してください。
 
-実在性: 必ず実在するニュースを引用してください。AIによる記事の生成や創作は固く禁じます。
+実在性と検証可能性（最優先事項）:
+- 必ず実在するニュース記事・動画のみを引用してください
+- AIによる記事の生成や創作は固く禁じます
+- 実際に公開されている記事のURLのみを使用してください
+- 存在しない記事のURLを生成・創作することは絶対に禁止です
+- 各記事のURLは、実際にそのメディアサイトで公開されている記事のURLである必要があります
+- 推測や想像に基づいたURLを記載しないでください
+- 記事タイトル、引用元、掲載年月日、記事リンクは、すべて実際の記事と一致している必要があります
 
 信頼性: 信頼性の高いニュースソースに限定し、個人ブログのような記事は避けてください。
 
 独自性: 広く知られたメジャーな記事よりも、まだ多くの人が気づいていない未来の兆しを示唆する、マイナーながらも示唆に富む記事や動画を優先してください。
+
+URLの検証要件:
+- 記載するURLは、必ず実際に存在する記事のURLであること
+- URLの形式が正しいこと（http://またはhttps://で始まる）
+- 指定メディアリストのドメインに一致すること
+- 実際にアクセス可能なURLであること
+- 存在しない記事のURLを推測で作成しないこと
 
 6. 海外メディアの記事・動画を扱う場合の特記事項
 
@@ -279,6 +307,20 @@ World Economic Forum — https://www.youtube.com/@WorldEconomicForum
 【今回のテーマ】
 
 {theme_list}
+
+【最終確認事項】
+
+出力前に必ず以下を確認してください：
+
+1. すべての記事が実際に存在するか
+2. すべてのURLが実際にアクセス可能か
+3. 存在しない記事を創作していないか
+4. 推測や想像に基づいた情報を含めていないか
+5. すべての情報が検証可能か
+
+⚠️ もし実際に存在する記事が見つからない場合は、件数を減らすか、該当テーマの記事を省略してください。存在しない記事を創作することは絶対に禁止です。
+
+実際に存在する記事のみを出力してください。
 """
         
         try:
@@ -321,6 +363,38 @@ World Economic Forum — https://www.youtube.com/@WorldEconomicForum
         
         return articles
     
+    def _validate_url(self, url: str) -> bool:
+        """
+        URLの妥当性を検証
+        
+        Args:
+            url: 検証するURL
+        
+        Returns:
+            妥当なURLかどうか
+        """
+        if not url:
+            return False
+        
+        # URLの形式をチェック
+        if not url.startswith(('http://', 'https://')):
+            print(f"⚠️ 無効なURL形式: {url}")
+            return False
+        
+        # 指定メディアリストのドメインかチェック（基本的な検証）
+        # 完全な検証は難しいが、少なくとも形式は確認
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(url)
+            if not parsed.netloc:
+                print(f"⚠️ 無効なURL（ドメインなし）: {url}")
+                return False
+        except Exception as e:
+            print(f"⚠️ URL解析エラー: {e}")
+            return False
+        
+        return True
+    
     def _parse_article_block(self, block: str, theme: str) -> Optional[Dict]:
         """
         記事ブロックをパース
@@ -349,6 +423,11 @@ World Economic Forum — https://www.youtube.com/@WorldEconomicForum
             # 記事リンク
             url_match = re.search(r'記事リンク:\s*(.+?)(?=\n|クリッピング理由:)', block, re.DOTALL)
             url = url_match.group(1).strip() if url_match else None
+            
+            # URLの妥当性を検証
+            if url and not self._validate_url(url):
+                print(f"⚠️ 無効なURLをスキップ: {url}")
+                return None
             
             # クリッピング理由
             reason_match = re.search(r'クリッピング理由:\s*(.+?)(?=\n|記事要約)', block, re.DOTALL)
