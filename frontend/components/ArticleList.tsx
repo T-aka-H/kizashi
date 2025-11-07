@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { articleApi, Article } from '@/lib/api'
 import { format } from 'date-fns'
-import { ja } from 'date-fns/locale/ja'
+import { ja } from 'date-fns/locale'
 import { ExternalLink, Sparkles, TrendingUp, Tag } from 'lucide-react'
 
 export default function ArticleList() {

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { queueApi, articleApi, PostQueue, Article } from '@/lib/api'
 import { format } from 'date-fns'
-import { ja } from 'date-fns/locale/ja'
+import { ja } from 'date-fns/locale'
 import { Check, X, Send, RefreshCw } from 'lucide-react'
 
 export default function PostApproval() {
