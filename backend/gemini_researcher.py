@@ -24,7 +24,11 @@ class GeminiResearcher:
             raise ValueError("GEMINI_API_KEY環境変数が設定されていません")
         
         genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel(model)
+        # Grounding を常時使うならモデル側にだけ tools を固定
+        self.model = genai.GenerativeModel(
+            model,
+            tools=[{"google_search_retrieval": {}}]
+        )
     
     def run_deep_research(self, themes: str) -> Dict:
         """
@@ -313,28 +317,10 @@ World Economic Forum — https://www.youtube.com/@WorldEconomicForum
         
         try:
             # Gemini APIでGoogle Search Groundingを使用
-            # 方式A: 呼び出し時だけtoolsを渡す（モデル作成時には渡さない）
-            # payload辞書を作成して、toolsを安全に追加
-            tools = [{"google_search_retrieval": {}}]
-            
-            # payloadを作成（他の引数がない場合は空辞書から開始）
+            # 呼び出し時には tools を一切渡さない（重複防止）
+            # tools はモデル生成時に設定済み
             payload = {"contents": prompt}
-            
-            # 念のため、既存のtoolsを削除（二重指定を防ぐ）
-            # モデル生成時にtoolsが設定されていないことを確認
-            if hasattr(self.model, '_tools') and self.model._tools:
-                print(f"⚠️ 警告: モデルに既にtoolsが設定されています。呼び出し時のtoolsを使用します。")
-            
-            # Groundingを使用する場合のみtoolsを追加
-            payload["tools"] = tools
-            
-            # 再発防止ログ（デバッグ用）
             print(f"🔍 generate_content呼び出し: keys={list(payload.keys())}")
-            
-            # ガード: toolsが二重に含まれていないか確認
-            if payload.get("tools") and hasattr(self.model, '_tools') and self.model._tools:
-                raise RuntimeError("tools would be passed twice: both in model and in payload")
-            
             response = self.model.generate_content(**payload)
             
             # レスポンスからテキストを取得
