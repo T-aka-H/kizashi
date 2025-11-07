@@ -7,6 +7,7 @@ import time
 from typing import List, Dict, Optional
 from datetime import datetime
 import google.generativeai as genai
+from google.generativeai.types import Tool, GoogleSearch
 
 # Google API Core例外をインポート（リトライ用）
 try:
@@ -32,10 +33,13 @@ class GeminiResearcher:
             raise ValueError("GEMINI_API_KEY環境変数が設定されていません")
         
         genai.configure(api_key=self.api_key)
-        # Grounding を常時使うならモデル側にだけ tools を固定
+        # Grounding (Google Search) を有効にする
+        # Tool と GoogleSearch を使用する
+        google_search_tool = Tool(google_search=GoogleSearch())
+        
         self.model = genai.GenerativeModel(
             model,
-            tools=[{"google_search_retrieval": {}}]
+            tools=[google_search_tool]
         )
         # リトライ設定
         self.max_retries = 3
@@ -123,7 +127,7 @@ X (旧Twitter): https://x.com/hriwsk
 　　- 一般ユーザーが執筆するブログ・エッセイ系プラットフォーム（例：note、アメブロ、はてなブログ、個人WordPressサイト等）
 これらは客観性・検証性・編集価値に乏しく、未来洞察に必要な信頼性や示唆の深さを欠くため対象外とします。
 
-鮮度: 掲載・公開日が現在から3ヶ月以内の最新ニュースに限定してください。TT
+鮮度: 掲載・公開日が現在から3ヶ月以内の最新ニュースに限定してください。
 
 【⚠️⚠️⚠️ 最重要：実在性の厳格な遵守 ⚠️⚠️⚠️】
 
