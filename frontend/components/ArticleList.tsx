@@ -17,6 +17,7 @@ export default function ArticleList() {
 
   useEffect(() => {
     loadArticles()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTheme])
 
   const loadArticles = async () => {

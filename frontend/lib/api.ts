@@ -36,7 +36,13 @@ const api = axios.create({
 api.interceptors.request.use(
   (config) => {
     const authHeaders = getAuthHeaders()
-    config.headers = { ...config.headers, ...authHeaders }
+    // Axiosのヘッダー設定方法に合わせて修正
+    if (authHeaders['Authorization']) {
+      config.headers.set('Authorization', authHeaders['Authorization'] as string)
+    }
+    if (authHeaders['Content-Type']) {
+      config.headers.set('Content-Type', authHeaders['Content-Type'] as string)
+    }
     return config
   },
   (error) => {
