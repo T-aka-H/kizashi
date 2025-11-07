@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { articleApi, Article } from '@/lib/api'
-import { BarChart3, TrendingUp } from 'lucide-react'
+import { BarChart3, TrendingUp, RefreshCw } from 'lucide-react'
 
 export default function ThemeSelector() {
   const [articles, setArticles] = useState<Article[]>([])
@@ -56,7 +56,11 @@ export default function ThemeSelector() {
     stat.avgRelevance = stat.avgRelevance / stat.count
   })
 
-  const themes = Object.entries(themeStats).sort((a, b) => b[1].count - a[1].count)
+  const themes = Object.entries(themeStats).sort((a, b) => b[1].count - a[1].count) as Array<[string, { count: number; avgSentiment: number; avgRelevance: number; articles: Article[] }]>
+  
+  // 分析済み記事数と未分析記事数を計算
+  const analyzedCount = articles.filter((a: Article) => a.theme).length
+  const unanalyzedCount = articles.filter((a: Article) => !a.theme).length
 
   if (loading) {
     return (
@@ -86,6 +90,24 @@ export default function ThemeSelector() {
 
   return (
     <div>
+      {/* 統計情報と更新ボタン */}
+      <div className="mb-6 flex items-center justify-between">
+        <div className="text-sm text-gray-600">
+          <span>総記事数: {articles.length}</span>
+          <span className="ml-4">分析済み: {analyzedCount}</span>
+          {unanalyzedCount > 0 && (
+            <span className="ml-4 text-yellow-600">未分析: {unanalyzedCount}</span>
+          )}
+        </div>
+        <button
+          onClick={loadArticles}
+          className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700"
+        >
+          <RefreshCw size={16} />
+          <span>更新</span>
+        </button>
+      </div>
+
       {/* テーマ一覧 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
         {themes.map(([theme, stats]) => (
@@ -170,9 +192,21 @@ export default function ThemeSelector() {
         </div>
       )}
 
+      {/* テーマが表示されない場合のメッセージ */}
       {themes.length === 0 && (
         <div className="bg-white rounded-lg shadow-md p-8 text-center border border-gray-200">
-          <p className="text-gray-600">テーマデータがありません</p>
+          <p className="text-gray-600 mb-2">テーマデータがありません</p>
+          {unanalyzedCount > 0 ? (
+            <p className="text-sm text-gray-500">
+              記事一覧ページで記事を分析してください。
+              <br />
+              分析済みの記事がテーマとして表示されます。
+            </p>
+          ) : articles.length === 0 ? (
+            <p className="text-sm text-gray-500">
+              記事がまだ登録されていません。
+            </p>
+          ) : null}
         </div>
       )}
     </div>
