@@ -1,0 +1,16 @@
+# Renderで無視するファイル
+.env
+.env.local
+*.db
+*.sqlite
+*.sqlite3
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+node_modules/
+.next/
+.DS_Store
+*.log
+
