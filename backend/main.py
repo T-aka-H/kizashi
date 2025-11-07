@@ -255,6 +255,12 @@ async def post_to_social(
     return {"message": "投稿完了", "post_id": result.get("post_id"), "platform": result.get("platform")}
 
 
+@app.get("/healthz")
+async def health_check():
+    """軽量なヘルスチェックエンドポイント（Render用）"""
+    return {"status": "ok"}
+
+
 @app.get("/stats")
 async def get_stats(db: Session = Depends(get_db)):
     """統計情報を取得"""
@@ -360,6 +366,37 @@ async def fetch_by_research(
         if "tools would be passed twice" in str(e):
             raise HTTPException(status_code=400, detail="Invalid request: tools specified multiple times")
         raise
+    except Exception as e:
+        # Gemini APIの503/429/500エラーを適切にハンドリング
+        error_str = str(e).lower()
+        
+        # 503エラー（サービス一時利用不可）
+        if "503" in error_str or "service unavailable" in error_str:
+            headers = {"Retry-After": "10"}
+            raise HTTPException(
+                status_code=503,
+                detail="Upstream service temporarily unavailable. Please retry later.",
+                headers=headers
+            )
+        
+        # 429エラー（レート制限）
+        if "429" in error_str or "rate limit" in error_str or "quota" in error_str or "resource exhausted" in error_str:
+            headers = {"Retry-After": "60"}
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded. Please retry later.",
+                headers=headers
+            )
+        
+        # 500エラー（サーバー内部エラー）
+        if "500" in error_str or "internal server error" in error_str:
+            raise HTTPException(
+                status_code=502,  # Bad Gateway（上流のエラー）
+                detail="Upstream service error. Please retry later."
+            )
+        
+        # その他のエラーは500として返す
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
     
     try:
         processed_count = 0

@@ -3,9 +3,17 @@ Gemini Grounding（Google Search）を使用した記事取得モジュール
 """
 import os
 import re
+import time
 from typing import List, Dict, Optional
 from datetime import datetime
 import google.generativeai as genai
+
+# Google API Core例外をインポート（リトライ用）
+try:
+    import google.api_core.exceptions as gex
+except ImportError:
+    # フォールバック（google-api-coreがインストールされていない場合）
+    gex = None
 
 
 class GeminiResearcher:
@@ -29,6 +37,9 @@ class GeminiResearcher:
             model,
             tools=[{"google_search_retrieval": {}}]
         )
+        # リトライ設定
+        self.max_retries = 3
+        self.base_delay = 1.0  # 指数バックオフのベース遅延（秒）
     
     def run_deep_research(self, themes: str) -> Dict:
         """
@@ -321,7 +332,9 @@ World Economic Forum — https://www.youtube.com/@WorldEconomicForum
             # tools はモデル生成時に設定済み
             payload = {"contents": prompt}
             print(f"🔍 generate_content呼び出し: keys={list(payload.keys())}")
-            response = self.model.generate_content(**payload)
+            
+            # リトライ付きでAPI呼び出し
+            response = self._call_gemini_with_retry(payload)
             
             # レスポンスからテキストを取得
             summary = response.text
@@ -358,22 +371,113 @@ World Economic Forum — https://www.youtube.com/@WorldEconomicForum
                 'sources': sources,
                 'prompt': prompt
             }
-                
-        except TypeError as e:
-            # toolsが二重に渡されている場合のエラーハンドリング
-            error_msg = str(e)
-            if "multiple values for keyword argument 'tools'" in error_msg:
-                print(f"❌ エラー: toolsが二重に指定されています")
-                print(f"   詳細: {error_msg}")
-                print(f"   payload keys: {list(payload.keys()) if 'payload' in locals() else 'N/A'}")
-                # FastAPI側で400エラーとして返すため、ValueErrorを発生
-                raise ValueError("Invalid request: tools specified multiple times. Please check generate_content call.")
-            raise
         except Exception as e:
+            # リトライ後も失敗した場合のエラーハンドリング
             print(f"⚠️ Gemini Groundingエラー: {e}")
             import traceback
             traceback.print_exc()
             raise
+    
+    def _call_gemini_with_retry(self, payload: Dict, max_retries: Optional[int] = None, base_delay: Optional[float] = None) -> any:
+        """
+        Gemini API呼び出しをリトライ付きで実行
+        
+        Args:
+            payload: generate_contentに渡すペイロード
+            max_retries: 最大リトライ回数（Noneの場合はself.max_retriesを使用）
+            base_delay: 指数バックオフのベース遅延（Noneの場合はself.base_delayを使用）
+        
+        Returns:
+            generate_contentのレスポンス
+        
+        Raises:
+            ValueError: toolsの二重指定エラー
+            Exception: その他のエラー（リトライ後も失敗した場合）
+        """
+        max_retries = max_retries or self.max_retries
+        base_delay = base_delay or self.base_delay
+        
+        last_exception = None
+        
+        for attempt in range(max_retries + 1):
+            try:
+                if attempt > 0:
+                    delay = base_delay * (2 ** (attempt - 1))  # 指数バックオフ
+                    print(f"⏳ リトライ {attempt}/{max_retries} (待機時間: {delay:.1f}秒)")
+                    time.sleep(delay)
+                
+                response = self.model.generate_content(**payload)
+                if attempt > 0:
+                    print(f"✅ リトライ成功（試行回数: {attempt + 1}）")
+                return response
+                
+            except TypeError as e:
+                # toolsの二重指定エラーはリトライしない
+                error_msg = str(e)
+                if "multiple values for keyword argument 'tools'" in error_msg:
+                    print(f"❌ エラー: toolsが二重に指定されています")
+                    print(f"   詳細: {error_msg}")
+                    print(f"   payload keys: {list(payload.keys())}")
+                    raise ValueError("Invalid request: tools specified multiple times. Please check generate_content call.")
+                raise
+                
+            except Exception as e:
+                last_exception = e
+                error_type = type(e).__name__
+                
+                # Google API Core例外のチェック
+                if gex:
+                    if isinstance(e, gex.ResourceExhausted):  # 429
+                        print(f"⚠️ レート制限エラー (429): {e}")
+                        if attempt < max_retries:
+                            continue
+                        raise
+                    elif isinstance(e, gex.InternalServerError):  # 500
+                        print(f"⚠️ サーバー内部エラー (500): {e}")
+                        if attempt < max_retries:
+                            continue
+                        raise
+                    elif isinstance(e, gex.ServiceUnavailable):  # 503
+                        print(f"⚠️ サービス一時利用不可 (503): {e}")
+                        if attempt < max_retries:
+                            continue
+                        raise
+                    elif isinstance(e, gex.DeadlineExceeded):  # タイムアウト
+                        print(f"⚠️ タイムアウトエラー: {e}")
+                        if attempt < max_retries:
+                            continue
+                        raise
+                
+                # その他のエラー（文字列チェックで503/429/500を検出）
+                error_str = str(e).lower()
+                if "503" in error_str or "service unavailable" in error_str:
+                    print(f"⚠️ サービス一時利用不可 (503): {e}")
+                    if attempt < max_retries:
+                        continue
+                    raise
+                elif "429" in error_str or "rate limit" in error_str or "quota" in error_str:
+                    print(f"⚠️ レート制限エラー (429): {e}")
+                    if attempt < max_retries:
+                        continue
+                    raise
+                elif "500" in error_str or "internal server error" in error_str:
+                    print(f"⚠️ サーバー内部エラー (500): {e}")
+                    if attempt < max_retries:
+                        continue
+                    raise
+                elif "timeout" in error_str or "timed out" in error_str:
+                    print(f"⚠️ タイムアウトエラー: {e}")
+                    if attempt < max_retries:
+                        continue
+                    raise
+                else:
+                    # リトライ不可なエラーは即座に再発生
+                    print(f"❌ リトライ不可なエラー ({error_type}): {e}")
+                    raise
+        
+        # すべてのリトライが失敗した場合
+        print(f"❌ 最大リトライ回数 ({max_retries}) に達しました。最後のエラー: {last_exception}")
+        raise last_exception
     
     def parse_research_results(self, research_text: str, sources: List = None) -> List[Dict]:
         """
