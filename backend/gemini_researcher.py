@@ -9,16 +9,23 @@ from datetime import datetime
 import google.generativeai as genai
 
 # Google Search Grounding用のインポート（最新バージョン対応）
+# 複数のパスを試して、確実にインポートできるようにする
+Tool = None
+GoogleSearch = None
+
 try:
+    # パターン1: 最も一般的で最新のパス (google-generativeai >= 0.8.0)
     from google.generativeai.types import Tool, GoogleSearch
+    print("✨ Tool/GoogleSearch: パターン1でインポート成功")
 except ImportError:
-    # フォールバック: 別のインポートパスを試す
     try:
+        # パターン2: 以前のパス（一部のバージョンで存在）
         from google.generativeai import Tool, GoogleSearch
+        print("✨ Tool/GoogleSearch: パターン2でインポート成功")
     except ImportError:
-        # さらに別の方法を試す
-        Tool = None
-        GoogleSearch = None
+        # どのパスでも見つからなかった場合、Noneのままとなる
+        print("⚠️ Tool/GoogleSearch: 必要なクラスのインポートに失敗")
+        pass
 
 # Google API Core例外をインポート（リトライ用）
 try:
@@ -50,31 +57,28 @@ class GeminiResearcher:
         print("🔧 Google Search Groundingを初期化中...")
         
         try:
-            # Tool と GoogleSearch を使用する (最新バージョンで推奨される唯一の方法)
-            if not Tool or not GoogleSearch:
-                # このケースは、ファイルの先頭のインポートが失敗した場合のみ発生
-                raise ImportError("Tool and GoogleSearch classes could not be imported. Please check google-generativeai version (>=0.5.0 required).")
-            
-            print("  → Tool/GoogleSearchクラスで初期化")
-            google_search_tool = Tool(google_search=GoogleSearch())
-            self.model = genai.GenerativeModel(
-                model,
-                tools=[google_search_tool]
-            )
-            print("  ✅ Tool/GoogleSearchで初期化成功")
-            
+            if Tool and GoogleSearch:
+                # 必要なクラスがインポートできた場合のみ、最新の形式で初期化を試みる
+                print("  → Tool/GoogleSearchクラスを使用")
+                google_search_tool = Tool(google_search=GoogleSearch())
+                self.model = genai.GenerativeModel(
+                    model,
+                    tools=[google_search_tool]
+                )
+                print("  ✅ Tool/GoogleSearchで初期化成功")
+            else:
+                # クラスのインポートに失敗した場合は、エラーを発生させずにGroundingなしで続行
+                raise RuntimeError("Required Grounding classes were not imported.")
+                
         except Exception as e:
-            # 辞書形式はもはや受け付けられないため、失敗した場合は警告を出し、Groundingなしで続行
-            print(f"❌ 致命的な初期化エラー: Google Search Groundingを有効にできませんでした。")
-            print(f"   エラー: {e}")
+            print(f"❌ 致命的な初期化エラー: Google Search Groundingを有効にできませんでした。エラー: {e}")
             print(f"   エラータイプ: {type(e).__name__}")
             import traceback
             traceback.print_exc()
             
-            # Groundingなしでモデルを初期化し、実行時の400エラーを防ぐ（応急処置）
-            # 注意: この場合、Grounding機能は使用できません
-            print("  ⚠️ 警告: Google Search Groundingが無効です。Groundingなしでモデルを初期化します。")
+            # Groundingなしでモデルを初期化（前回の400エラーを防ぐため、古い辞書形式は使用しない）
             self.model = genai.GenerativeModel(model)
+            print("  ⚠️ 警告: Google Search Groundingが無効です。Groundingなしでモデルを初期化します。")
             print("  ⚠️ 注意: この状態ではGoogle Search機能は使用できません。")
         # リトライ設定
         self.max_retries = 3
