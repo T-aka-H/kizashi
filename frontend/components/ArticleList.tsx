@@ -1,16 +1,19 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { articleApi, Article } from '@/lib/api'
+import { articleApi, Article, researchApi } from '@/lib/api'
 import { format } from 'date-fns'
 import { ja } from 'date-fns/locale'
-import { ExternalLink, Sparkles, TrendingUp, Tag } from 'lucide-react'
+import { ExternalLink, Sparkles, TrendingUp, Tag, Search, Loader2 } from 'lucide-react'
 
 export default function ArticleList() {
   const [articles, setArticles] = useState<Article[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedTheme, setSelectedTheme] = useState<string>('')
+  const [researchLoading, setResearchLoading] = useState(false)
+  const [researchThemes, setResearchThemes] = useState('')
+  const [showResearchForm, setShowResearchForm] = useState(false)
 
   useEffect(() => {
     loadArticles()
@@ -36,6 +39,33 @@ export default function ArticleList() {
       loadArticles()
     } catch (err: any) {
       alert(`分析エラー: ${err.message}`)
+    }
+  }
+
+  const handleResearch = async () => {
+    if (!researchThemes.trim()) {
+      setError('テーマを入力してください')
+      return
+    }
+
+    try {
+      setResearchLoading(true)
+      setError(null)
+      
+      const result = await researchApi.fetchByResearch(researchThemes.trim())
+      
+      alert(`✅ 取得完了: ${result.processed}件の記事を処理、${result.analyzed}件を分析、${result.queued}件をキューに追加しました`)
+      
+      // 記事一覧を更新
+      await loadArticles()
+      
+      // フォームを閉じる
+      setShowResearchForm(false)
+      setResearchThemes('')
+    } catch (err: any) {
+      setError(err.message || '記事の取得に失敗しました')
+    } finally {
+      setResearchLoading(false)
     }
   }
 
@@ -66,6 +96,61 @@ export default function ArticleList() {
 
   return (
     <div>
+      {/* 記事取得セクション */}
+      <div className="mb-6 bg-white rounded-lg shadow-md p-4 border border-gray-200">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+            <Search className="text-primary-600" size={20} />
+            Gemini DeepResearchで記事を取得
+          </h2>
+          <button
+            onClick={() => setShowResearchForm(!showResearchForm)}
+            className="px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700 text-sm"
+          >
+            {showResearchForm ? '閉じる' : '記事を取得'}
+          </button>
+        </div>
+        
+        {showResearchForm && (
+          <div className="space-y-4 pt-4 border-t border-gray-200">
+            <div>
+              <label htmlFor="themes-list" className="block text-sm font-medium text-gray-700 mb-2">
+                テーマ（カンマ区切り）
+              </label>
+              <input
+                id="themes-list"
+                type="text"
+                value={researchThemes}
+                onChange={(e) => setResearchThemes(e.target.value)}
+                placeholder="例: AI, ブロックチェーン, 量子コンピュータ"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                disabled={researchLoading}
+              />
+              <p className="mt-1 text-sm text-gray-500">
+                複数のテーマをカンマで区切って入力してください
+              </p>
+            </div>
+            <button
+              onClick={handleResearch}
+              disabled={researchLoading || !researchThemes.trim()}
+              className="w-full px-6 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+            >
+              {researchLoading ? (
+                <>
+                  <Loader2 className="animate-spin" size={20} />
+                  取得中...
+                </>
+              ) : (
+                <>
+                  <Search size={20} />
+                  記事を取得
+                </>
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* フィルター */}
       <div className="mb-6 flex items-center space-x-4">
         <label className="text-sm font-medium text-gray-700">テーマでフィルター:</label>

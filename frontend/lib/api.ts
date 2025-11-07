@@ -110,3 +110,24 @@ export const statsApi = {
   },
 }
 
+export interface ResearchRequest {
+  themes: string  // カンマ区切りのテーマリスト
+}
+
+export interface ResearchResponse {
+  message: string
+  processed: number
+  analyzed: number
+  queued: number
+}
+
+export const researchApi = {
+  // DeepResearchで記事を取得
+  fetchByResearch: async (themes: string): Promise<ResearchResponse> => {
+    const response = await api.post<ResearchResponse>('/fetch/research', {
+      themes,
+    })
+    return response.data
+  },
+}
+
