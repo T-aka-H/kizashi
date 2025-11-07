@@ -36,7 +36,7 @@ Blueprint作成後、各サービスで環境変数を設定：
 
 #### バックエンドサービス
 
-Render Dashboard → `weak-signals-backend` → Environment
+Render Dashboard → `kizashi-backend` → Environment
 
 以下の環境変数を追加：
 
@@ -54,14 +54,14 @@ BLUESKY_PASSWORD=xxxx-xxxx-xxxx-xxxx
 `NEXT_PUBLIC_API_URL`は自動的に設定されますが、手動で設定する場合：
 
 ```
-NEXT_PUBLIC_API_URL=https://weak-signals-backend.onrender.com
+NEXT_PUBLIC_API_URL=https://kizashi-backend.onrender.com
 ```
 
 ### ステップ4: デプロイの確認
 
 1. 各サービスのログを確認
-2. バックエンド: `https://weak-signals-backend.onrender.com/docs`
-3. フロントエンド: `https://weak-signals-frontend.onrender.com`
+2. バックエンド: `https://kizashi-backend.onrender.com/docs`
+3. フロントエンド: `https://kizashi-frontend.onrender.com`
 
 ### ステップ5: データベースの初期化
 
@@ -69,7 +69,7 @@ NEXT_PUBLIC_API_URL=https://weak-signals-backend.onrender.com
 
 **方法1: Render Shellを使用**
 
-1. Render Dashboard → `weak-signals-backend` → Shell
+1. Render Dashboard → `kizashi-backend` → Shell
 2. 以下を実行：
 
 ```bash
@@ -88,7 +88,7 @@ python -c "from database import init_db; init_db()"
 1. "New +" → "Web Service"
 2. GitHubリポジトリを接続
 3. 設定：
-   - **Name**: `weak-signals-backend`
+   - **Name**: `kizashi-backend`
    - **Environment**: `Python 3`
    - **Build Command**: `pip install -r backend/requirements.txt`
    - **Start Command**: `cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT`
@@ -99,7 +99,7 @@ python -c "from database import init_db; init_db()"
 1. "New +" → "Web Service"
 2. GitHubリポジトリを接続
 3. 設定：
-   - **Name**: `weak-signals-frontend`
+   - **Name**: `kizashi-frontend`
    - **Environment**: `Node`
    - **Build Command**: `cd frontend && npm install && npm run build`
    - **Start Command**: `cd frontend && npm start`
@@ -109,9 +109,9 @@ python -c "from database import init_db; init_db()"
 
 1. "New +" → "PostgreSQL"
 2. 設定：
-   - **Name**: `weak-signals-db`
-   - **Database**: `weak_signals`
-   - **User**: `weak_signals_user`
+   - **Name**: `kizashi-db`
+   - **Database**: `kizashi`
+   - **User**: `kizashi_user`
    - **Plan**: Starter（無料プラン）
 
 3. バックエンドサービスに`DATABASE_URL`環境変数を追加（自動的に提供されます）
