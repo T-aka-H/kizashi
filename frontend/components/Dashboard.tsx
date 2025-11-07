@@ -26,6 +26,11 @@ export default function Dashboard() {
       setStats(data)
       setError(null)
     } catch (err: any) {
+      // 401エラーの場合は認証が必要（リダイレクトはapi.tsで処理）
+      if (err.response?.status === 401) {
+        setError('認証が必要です。ログインページにリダイレクトします...')
+        return
+      }
       setError(err.message || '統計情報の取得に失敗しました')
     } finally {
       setLoading(false)

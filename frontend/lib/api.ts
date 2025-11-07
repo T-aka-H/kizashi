@@ -53,8 +53,10 @@ api.interceptors.response.use(
       if (typeof window !== 'undefined') {
         localStorage.removeItem('auth_username')
         localStorage.removeItem('auth_password')
-        // ログインページにリダイレクト（必要に応じて）
-        // window.location.href = '/login'
+        // ログインページにリダイレクト
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login'
+        }
       }
     }
     return Promise.reject(error)
