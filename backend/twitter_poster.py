@@ -39,7 +39,7 @@ class SocialPoster:
             
             self.client = Client()
             self.client.login(login=BLUESKY_HANDLE, password=BLUESKY_PASSWORD)
-            self.max_length = 300  # Blueskyの文字数制限
+            self.max_length = 280  # Blueskyの文字数制限（280文字）
             print(f"✅ Bluesky接続成功: @{BLUESKY_HANDLE}")
             
         except ImportError:
@@ -53,7 +53,7 @@ class SocialPoster:
         """デモモードを初期化"""
         self.client = None
         self.mode = "demo"
-        self.max_length = 300  # Bluesky基準
+        self.max_length = 280  # Bluesky基準（280文字）
         print("📝 デモモード: 実際には投稿しません")
     
     def post(self, text: str) -> Optional[Dict]:

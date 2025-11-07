@@ -102,7 +102,7 @@ export default function ArticleList() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
             <Search className="text-primary-600" size={20} />
-            OpenAI DeepResearchで記事を取得
+            Gemini Grounding（Google Search）で記事を取得
           </h2>
           <button
             onClick={() => setShowResearchForm(!showResearchForm)}

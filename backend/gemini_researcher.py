@@ -1,5 +1,5 @@
 """
-Gemini DeepResearchを使用した記事取得モジュール
+Gemini Grounding（Google Search）を使用した記事取得モジュール
 """
 import os
 import re
@@ -9,9 +9,9 @@ import google.generativeai as genai
 
 
 class GeminiResearcher:
-    """Gemini DeepResearchを使用して記事を取得するクラス"""
+    """Gemini Grounding（Google Search）を使用して記事を取得するクラス"""
     
-    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-2.0-flash-exp"):
+    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-2.5-flash"):
         """
         初期化
         
@@ -26,19 +26,21 @@ class GeminiResearcher:
         genai.configure(api_key=self.api_key)
         self.model = genai.GenerativeModel(model)
     
-    def run_deep_research(self, themes: str) -> str:
+    def run_deep_research(self, themes: str) -> Dict:
         """
-        調査用プロンプトを与えて、Gemini APIに生成を依頼する
+        調査用プロンプトを与えて、Gemini APIに生成を依頼する（Google Search Grounding使用）
         
         Args:
             themes: カンマ区切りのテーマリスト（例: "AI, ブロックチェーン, 量子コンピュータ"）
         
         Returns:
-            調査結果のテキスト
+            調査結果の辞書（summary, sourcesを含む）
         """
         theme_list = '\n'.join([f"- {t.strip()}" for t in themes.split(',')])
+        theme_count = len(themes.split(','))
         
-        full_prompt = f"""1. 【最重要指示】タスクの基本原則と優先順位
+        # プロンプトを構築（提供されたプロンプトを使用）
+        prompt = f"""1. 【最重要指示】タスクの基本原則と優先順位
 
 あなたのタスクは、以下の2つの原則で構成されます。AIとして、いかなる場合もこの優先順位を厳守してください。
 
@@ -66,12 +68,7 @@ class GeminiResearcher:
 
 区切り線: テーマとテーマの間には、必ず区切り線 --- を挿入してください。
 
-件数: テーマ数 × 2件という選定総数（今回は{len(themes.split(','))}テーマなので{len(themes.split(',')) * 2}件）を厳守してください。
-
-【重要】件数が不足する場合の対応:
-- 実際に存在する記事が見つからない場合は、件数を減らしても構いません
-- 存在しない記事を創作して件数を満たすことは絶対に禁止です
-- 実在する記事のみを使用し、件数は実際に見つかった記事数で構いません
+件数: テーマ数 × 2件という選定総数（今回は{theme_count}テーマなので{theme_count * 2}件）を厳守してください。
 
 禁止事項: 「レポート」形式での出力や、要約・序論・結論・考察といった指定外の文章は一切生成しないでください。挨拶も不要です。
 
@@ -103,15 +100,6 @@ X (旧Twitter): https://x.com/hriwsk
 
 5. クリップ対象ニュースの厳格な要件
 
-【最重要警告：FakeNewsの生成を絶対に禁止】
-
-⚠️ 絶対に守るべき原則：
-- 実際に存在する記事・動画のみを引用してください
-- 存在しない記事を創作・生成することは固く禁じます
-- 推測や想像に基づいた記事を作成しないでください
-- 実際にアクセス可能なURLのみを記載してください
-- 検証不可能な情報源は使用しないでください
-
 情報源: 必ず、後述の【指定メディアリスト】から記事を優先的に選択してください。
 
 ※以下のようなソースは使用禁止とします：
@@ -120,27 +108,28 @@ X (旧Twitter): https://x.com/hriwsk
 　　- 一般ユーザーが執筆するブログ・エッセイ系プラットフォーム（例：note、アメブロ、はてなブログ、個人WordPressサイト等）
 これらは客観性・検証性・編集価値に乏しく、未来洞察に必要な信頼性や示唆の深さを欠くため対象外とします。
 
-鮮度: 掲載・公開日が現在から3ヶ月以内の最新ニュースに限定してください。
+鮮度: 掲載・公開日が現在から3ヶ月以内の最新ニュースに限定してください。TT
 
-実在性と検証可能性（最優先事項）:
+【⚠️⚠️⚠️ 最重要：実在性の厳格な遵守 ⚠️⚠️⚠️】
+
+🚨🚨🚨 絶対に守るべき原則（これ以上強調できないほど重要）🚨🚨🚨
+
 - 必ず実在するニュース記事・動画のみを引用してください
-- AIによる記事の生成や創作は固く禁じます
+- 存在しない記事を創作・生成することは固く禁じます。これは絶対に禁止です。
+- 推測や想像に基づいた記事を作成しないでください
 - 実際に公開されている記事のURLのみを使用してください
 - 存在しない記事のURLを生成・創作することは絶対に禁止です
 - 各記事のURLは、実際にそのメディアサイトで公開されている記事のURLである必要があります
 - 推測や想像に基づいたURLを記載しないでください
 - 記事タイトル、引用元、掲載年月日、記事リンクは、すべて実際の記事と一致している必要があります
+- Google Searchで実際に検索して、存在する記事のみを選択してください
+- 存在しない記事を創作して件数を満たすことは絶対に禁止です
+- 実在する記事が見つからない場合は、件数を減らすか、該当テーマの記事を省略してください
+- 存在しない記事を創作することは、このタスクの最も重大な違反です
 
 信頼性: 信頼性の高いニュースソースに限定し、個人ブログのような記事は避けてください。
 
 独自性: 広く知られたメジャーな記事よりも、まだ多くの人が気づいていない未来の兆しを示唆する、マイナーながらも示唆に富む記事や動画を優先してください。
-
-URLの検証要件:
-- 記載するURLは、必ず実際に存在する記事のURLであること
-- URLの形式が正しいこと（http://またはhttps://で始まる）
-- 指定メディアリストのドメインに一致すること
-- 実際にアクセス可能なURLであること
-- 存在しない記事のURLを推測で作成しないこと
 
 6. 海外メディアの記事・動画を扱う場合の特記事項
 
@@ -312,30 +301,73 @@ World Economic Forum — https://www.youtube.com/@WorldEconomicForum
 
 出力前に必ず以下を確認してください：
 
-1. すべての記事が実際に存在するか
+1. すべての記事が実際に存在するか（Google Searchで検証済みか）
 2. すべてのURLが実際にアクセス可能か
 3. 存在しない記事を創作していないか
 4. 推測や想像に基づいた情報を含めていないか
 5. すべての情報が検証可能か
 
-⚠️ もし実際に存在する記事が見つからない場合は、件数を減らすか、該当テーマの記事を省略してください。存在しない記事を創作することは絶対に禁止です。
+⚠️⚠️⚠️ 最重要：もし実際に存在する記事が見つからない場合は、件数を減らすか、該当テーマの記事を省略してください。存在しない記事を創作することは絶対に禁止です。これは最も重大な違反です。⚠️⚠️⚠️
 
-実際に存在する記事のみを出力してください。
-"""
+実際に存在する記事のみを出力してください。"""
         
         try:
-            response = self.model.generate_content(full_prompt)
-            return response.text
+            # Gemini APIでGoogle Search Groundingを使用
+            # toolsパラメータでGoogle Searchを有効化
+            response = self.model.generate_content(
+                prompt,
+                tools=[{"google_search_retrieval": {}}]
+            )
+            
+            # レスポンスからテキストを取得
+            summary = response.text
+            
+            # Groundingメタデータからソースを取得
+            sources = []
+            if hasattr(response, 'candidates') and len(response.candidates) > 0:
+                candidate = response.candidates[0]
+                
+                # grounding_metadataの取得を試みる
+                if hasattr(candidate, 'grounding_metadata'):
+                    grounding_metadata = candidate.grounding_metadata
+                    if hasattr(grounding_metadata, 'grounding_chunks'):
+                        grounding_chunks = grounding_metadata.grounding_chunks
+                        if isinstance(grounding_chunks, list):
+                            # Webソースのみをフィルタリング
+                            sources = [
+                                chunk for chunk in grounding_chunks
+                                if hasattr(chunk, 'web') and chunk.web
+                            ]
+                # 別の形式の可能性も確認
+                elif hasattr(candidate, 'groundingMetadata'):
+                    grounding_metadata = candidate.groundingMetadata
+                    if hasattr(grounding_metadata, 'groundingChunks'):
+                        grounding_chunks = grounding_metadata.groundingChunks
+                        if isinstance(grounding_chunks, list):
+                            sources = [
+                                chunk for chunk in grounding_chunks
+                                if hasattr(chunk, 'web') and chunk.web
+                            ]
+            
+            return {
+                'summary': summary,
+                'sources': sources,
+                'prompt': prompt
+            }
+                
         except Exception as e:
-            print(f"⚠️ DeepResearchエラー: {e}")
+            print(f"⚠️ Gemini Groundingエラー: {e}")
+            import traceback
+            traceback.print_exc()
             raise
     
-    def parse_research_results(self, research_text: str) -> List[Dict]:
+    def parse_research_results(self, research_text: str, sources: List = None) -> List[Dict]:
         """
         DeepResearchの結果をパースして記事データのリストに変換
         
         Args:
             research_text: DeepResearchの結果テキスト
+            sources: Groundingソースのリスト（オプション）
         
         Returns:
             記事データのリスト（url, title, content, published_at, theme, clipping_reason, summary, future_signalを含む）
@@ -357,7 +389,7 @@ World Economic Forum — https://www.youtube.com/@WorldEconomicForum
             article_blocks = re.split(r'---', section)
             
             for block in article_blocks:
-                article = self._parse_article_block(block, theme)
+                article = self._parse_article_block(block, theme, sources)
                 if article:
                     articles.append(article)
         
@@ -395,13 +427,14 @@ World Economic Forum — https://www.youtube.com/@WorldEconomicForum
         
         return True
     
-    def _parse_article_block(self, block: str, theme: str) -> Optional[Dict]:
+    def _parse_article_block(self, block: str, theme: str, sources: List = None) -> Optional[Dict]:
         """
         記事ブロックをパース
         
         Args:
             block: 記事ブロックのテキスト
             theme: テーマ名
+            sources: Groundingソースのリスト（オプション）
         
         Returns:
             記事データの辞書またはNone
@@ -423,6 +456,26 @@ World Economic Forum — https://www.youtube.com/@WorldEconomicForum
             # 記事リンク
             url_match = re.search(r'記事リンク:\s*(.+?)(?=\n|クリッピング理由:)', block, re.DOTALL)
             url = url_match.group(1).strip() if url_match else None
+            
+            # URLが見つからない場合、Groundingソースから取得を試みる
+            if not url and sources:
+                # タイトルに基づいてソースを検索
+                for source_chunk in sources:
+                    if hasattr(source_chunk, 'web'):
+                        web = source_chunk.web
+                        # uriまたはurl属性を確認
+                        source_url = None
+                        if hasattr(web, 'uri'):
+                            source_url = web.uri
+                        elif hasattr(web, 'url'):
+                            source_url = web.url
+                        
+                        if source_url:
+                            # タイトルが一致するか、またはソース名が一致する場合
+                            if title and (title.lower() in str(source_url).lower() or 
+                                         (source and source.lower() in str(source_url).lower())):
+                                url = source_url
+                                break
             
             # URLの妥当性を検証
             if url and not self._validate_url(url):
@@ -504,15 +557,17 @@ World Economic Forum — https://www.youtube.com/@WorldEconomicForum
         Returns:
             記事データのリスト
         """
-        print(f"🔍 DeepResearchを実行中: {themes}")
+        print(f"🔍 Gemini Grounding（Google Search）を実行中: {themes}")
         
         # DeepResearchを実行
-        research_text = self.run_deep_research(themes)
+        research_result = self.run_deep_research(themes)
         
-        # 結果をパース
-        articles = self.parse_research_results(research_text)
+        # 結果をパース（ソース情報も渡す）
+        articles = self.parse_research_results(
+            research_result['summary'],
+            research_result.get('sources', [])
+        )
         
         print(f"✅ {len(articles)}件の記事を取得")
         
         return articles
-

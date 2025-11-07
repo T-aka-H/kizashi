@@ -121,7 +121,7 @@ export default function Dashboard() {
       <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200 mb-8">
         <h2 className="text-xl font-bold mb-4 text-gray-900 flex items-center gap-2">
           <Search className="text-primary-600" size={24} />
-          OpenAI DeepResearchで記事を取得
+          Gemini Grounding（Google Search）で記事を取得
         </h2>
         <div className="space-y-4">
           <div>
