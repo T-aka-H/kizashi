@@ -8,6 +8,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [statsAvailable, setStatsAvailable] = useState(true) // 統計情報が利用可能かどうか
   const [researchLoading, setResearchLoading] = useState(false)
   const [researchThemes, setResearchThemes] = useState('')
   const [researchResult, setResearchResult] = useState<string | null>(null)
@@ -18,12 +19,19 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadStats()
-    // 30秒ごとに更新
-    const interval = setInterval(loadStats, 30000)
-    return () => clearInterval(interval)
-  }, [])
+    // 統計情報が利用可能な場合のみ30秒ごとに更新
+    if (statsAvailable) {
+      const interval = setInterval(loadStats, 30000)
+      return () => clearInterval(interval)
+    }
+  }, [statsAvailable])
 
   const loadStats = async () => {
+    // 統計情報が利用不可の場合はスキップ
+    if (!statsAvailable) {
+      return
+    }
+
     try {
       setLoading(true)
       const data = await statsApi.getStats()
@@ -35,6 +43,16 @@ export default function Dashboard() {
         setError('認証が必要です。ログインページにリダイレクトします...')
         return
       }
+      
+      // 404エラーの場合は統計情報エンドポイントが存在しない（削除されている）
+      if (err.response?.status === 404) {
+        setStatsAvailable(false)
+        setStats(null)
+        setError(null) // エラーを表示しない（正常な状態として扱う）
+        return
+      }
+      
+      // その他のエラー
       setError(err.message || '統計情報の取得に失敗しました')
     } finally {
       setLoading(false)
@@ -58,8 +76,10 @@ export default function Dashboard() {
         `✅ 取得完了: ${result.processed}件の記事を処理、${result.analyzed}件を分析、${result.queued}件をキューに追加しました`
       )
       
-      // 統計情報を更新
-      await loadStats()
+      // 統計情報を更新（利用可能な場合のみ）
+      if (statsAvailable) {
+        await loadStats()
+      }
       
       // テーマ入力欄をクリア
       setResearchThemes('')
@@ -82,8 +102,10 @@ export default function Dashboard() {
         `✅ WIRED RSS取得完了: ${result.articles_count}件の記事を取得しました`
       )
       
-      // 統計情報を更新
-      await loadStats()
+      // 統計情報を更新（利用可能な場合のみ）
+      if (statsAvailable) {
+        await loadStats()
+      }
     } catch (err: any) {
       setError(err.message || 'WIRED RSSの取得に失敗しました')
     } finally {
@@ -107,8 +129,10 @@ export default function Dashboard() {
         `✅ ${result.message}${result.note ? `\n${result.note}` : ''}`
       )
       
-      // 統計情報を更新
-      await loadStats()
+      // 統計情報を更新（利用可能な場合のみ）
+      if (statsAvailable) {
+        await loadStats()
+      }
     } catch (err: any) {
       setError(err.message || 'WIRED Botの実行に失敗しました')
     } finally {
@@ -116,7 +140,8 @@ export default function Dashboard() {
     }
   }
 
-  if (loading && !stats) {
+  // 統計情報の読み込み中で、かつ統計情報が利用可能な場合のみローディング表示
+  if (loading && statsAvailable && !stats) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
@@ -124,7 +149,8 @@ export default function Dashboard() {
     )
   }
 
-  if (error) {
+  // エラー表示（統計情報のエラーは表示しない、404の場合は正常な状態として扱う）
+  if (error && statsAvailable) {
     return (
       <div className="bg-red-50 border border-red-200 rounded-lg p-4">
         <p className="text-red-800">{error}</p>
@@ -272,27 +298,30 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        {statCards.map((card) => {
-          const Icon = card.icon
-          return (
-            <div
-              key={card.title}
-              className="bg-white rounded-lg shadow-md p-6 border border-gray-200"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-gray-600 text-sm font-medium">{card.title}</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">{card.value}</p>
-                </div>
-                <div className={`${card.color} p-3 rounded-full`}>
-                  <Icon className="text-white" size={24} />
+      {/* 統計情報セクション（利用可能な場合のみ表示） */}
+      {statsAvailable && stats && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {statCards.map((card) => {
+            const Icon = card.icon
+            return (
+              <div
+                key={card.title}
+                className="bg-white rounded-lg shadow-md p-6 border border-gray-200"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-600 text-sm font-medium">{card.title}</p>
+                    <p className="text-3xl font-bold text-gray-900 mt-2">{card.value}</p>
+                  </div>
+                  <div className={`${card.color} p-3 rounded-full`}>
+                    <Icon className="text-white" size={24} />
+                  </div>
                 </div>
               </div>
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      )}
 
       <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
         <h2 className="text-xl font-bold mb-4 text-gray-900">システム状態</h2>
