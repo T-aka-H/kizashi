@@ -129,7 +129,32 @@ curl https://your-app.onrender.com/healthz
 }
 ```
 
-### 3. 毎朝8時の投稿確認
+### 3. 動作確認: テストエンドポイントにアクセス（推奨）
+
+**ブラウザから簡単にアクセス**:
+
+```
+https://kizashi-backend.onrender.com/test/wired-bot
+```
+
+**動作**:
+- WIRED Botが**即座に実行**されます
+- WIRED記事TOP5を取得してBlueskyに投稿します
+- 実行結果がJSONで返されます
+
+**レスポンス例**:
+```json
+{
+  "status": "success",
+  "message": "WIRED Bot (改良版) の実行が完了しました",
+  "timestamp": "2025-11-09T10:30:00",
+  "note": "Blueskyで投稿を確認してください（POST_MODE=blueskyの場合）"
+}
+```
+
+**注意**: 実際にBlueskyに投稿されます（`POST_MODE=bluesky`の場合）
+
+### 4. 毎朝8時の投稿確認
 
 毎朝8時（UTC）に自動的にWIRED記事TOP5がBlueskyに投稿されます。
 

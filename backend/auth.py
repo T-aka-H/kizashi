@@ -62,7 +62,7 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         
         # ヘルスチェックエンドポイントは認証不要
-        if request.url.path == "/" or request.url.path == "/docs" or request.url.path == "/openapi.json":
+        if request.url.path in ["/", "/docs", "/openapi.json", "/healthz", "/health"]:
             return await call_next(request)
         
         # 認証が無効な場合はスキップ

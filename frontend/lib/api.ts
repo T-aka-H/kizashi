@@ -190,3 +190,37 @@ export const researchApi = {
   },
 }
 
+export interface WiredRSSRequest {
+  max_items?: number
+  rss_url?: string
+}
+
+export interface WiredRSSResponse {
+  message: string
+  articles_count: number
+  articles: Article[]
+}
+
+export interface WiredBotTestResponse {
+  status: string
+  message: string
+  timestamp: string
+  note?: string
+}
+
+export const wiredApi = {
+  // WIRED RSSから記事を取得
+  fetchWiredRSS: async (maxItems: number = 20): Promise<WiredRSSResponse> => {
+    const response = await api.post<WiredRSSResponse>('/fetch/wired-rss', {
+      max_items: maxItems,
+    })
+    return response.data
+  },
+
+  // WIRED Botをテスト実行
+  testWiredBot: async (): Promise<WiredBotTestResponse> => {
+    const response = await api.post<WiredBotTestResponse>('/test/wired-bot')
+    return response.data
+  },
+}
+

@@ -326,6 +326,61 @@ async def health_check():
     }
 
 
+@app.get("/test/wired-bot")
+@app.post("/test/wired-bot")
+async def test_wired_bot():
+    """
+    動作確認用: WIRED Botを即座に実行
+    
+    【用途】
+    - デプロイ後の動作確認
+    - 手動でのテスト実行
+    - ブラウザから簡単にアクセス可能（GET/POST両対応）
+    
+    【注意】
+    - 実際にBlueskyに投稿されます（POST_MODE=blueskyの場合）
+    - テスト実行後、スケジューラーは通常通り動作します
+    
+    【使い方】
+    - ブラウザ: https://your-app.onrender.com/test/wired-bot
+    - curl: curl -X POST https://your-app.onrender.com/test/wired-bot
+    """
+    logger.info("🧪 WIRED Botテスト実行開始（手動）")
+    
+    try:
+        # 基本版か改良版かを選択
+        use_advanced = os.getenv("USE_ADVANCED_BOT", "true").lower() == "true"
+        
+        if use_advanced:
+            from wired_bluesky_bot_advanced import WiredBlueskyBotAdvanced as WiredBot
+            bot_name = "改良版"
+        else:
+            from wired_bluesky_bot import WiredBlueskyBot as WiredBot
+            bot_name = "基本版"
+        
+        logger.info(f"🤖 WIRED Bot ({bot_name}) を実行します...")
+        
+        # WIRED Botを実行
+        bot = WiredBot()
+        bot.run()
+        
+        logger.info("✅ WIRED Botテスト実行完了")
+        
+        return {
+            "status": "success",
+            "message": f"WIRED Bot ({bot_name}) の実行が完了しました",
+            "timestamp": datetime.now().isoformat(),
+            "note": "Blueskyで投稿を確認してください（POST_MODE=blueskyの場合）"
+        }
+        
+    except Exception as e:
+        logger.error(f"⚠️ WIRED Botテスト実行エラー: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"WIRED Bot実行エラー: {str(e)}"
+        )
+
+
 @app.get("/health")
 async def health_check_detailed(db: Session = Depends(get_db)):
     """

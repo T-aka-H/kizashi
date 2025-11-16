@@ -104,8 +104,9 @@ POST_PASSWORD=your_post_password
 
 | 変数名 | 必須 | デフォルト | 説明 |
 |--------|------|-----------|------|
+| `DISABLE_WIRED_SCHEDULER` | No | `false` | WIRED Botスケジューラーを無効化<br>- `false`: 有効（毎朝8:00に自動投稿）<br>- `true`: 無効 |
 | `USE_ADVANCED_BOT` | No | `true` | WIRED Botで改良版を使用<br>- `true`: 改良版（記事本文取得）<br>- `false`: 基本版 |
-| `TEST_MODE` | No | `false` | WIRED Botのテストモード<br>- `true`: 1回だけ実行<br>- `false`: スケジュール実行 |
+| `TEST_MODE` | No | `false` | WIRED Botのテストモード<br>- `true`: デプロイ後30秒後に1回だけ実行<br>- `false`: スケジュール実行（毎朝8:00） |
 
 **例**:
 ```bash
@@ -143,6 +144,7 @@ SCHEDULER_INTERVAL_MINUTES=15
 # POST_PASSWORD=
 
 # WIRED Bot
+DISABLE_WIRED_SCHEDULER=false  # デフォルト（有効）
 USE_ADVANCED_BOT=true
 TEST_MODE=false
 ```
@@ -173,6 +175,7 @@ AUTH_PASSWORD=strong_password_here
 POST_PASSWORD=secure_post_password
 
 # WIRED Bot
+DISABLE_WIRED_SCHEDULER=false  # デフォルト（有効）
 USE_ADVANCED_BOT=true
 TEST_MODE=false
 ```

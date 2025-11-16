@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { statsApi, Stats, researchApi } from '@/lib/api'
-import { FileText, Send, Clock, Tag, Search, Loader2 } from 'lucide-react'
+import { statsApi, Stats, researchApi, wiredApi } from '@/lib/api'
+import { FileText, Send, Clock, Tag, Search, Loader2, Rss, Play } from 'lucide-react'
 
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null)
@@ -11,6 +11,10 @@ export default function Dashboard() {
   const [researchLoading, setResearchLoading] = useState(false)
   const [researchThemes, setResearchThemes] = useState('')
   const [researchResult, setResearchResult] = useState<string | null>(null)
+  const [wiredLoading, setWiredLoading] = useState(false)
+  const [wiredResult, setWiredResult] = useState<string | null>(null)
+  const [wiredBotLoading, setWiredBotLoading] = useState(false)
+  const [wiredBotResult, setWiredBotResult] = useState<string | null>(null)
 
   useEffect(() => {
     loadStats()
@@ -66,6 +70,52 @@ export default function Dashboard() {
     }
   }
 
+  const handleWiredRSS = async () => {
+    try {
+      setWiredLoading(true)
+      setError(null)
+      setWiredResult(null)
+      
+      const result = await wiredApi.fetchWiredRSS(20)
+      
+      setWiredResult(
+        `✅ WIRED RSS取得完了: ${result.articles_count}件の記事を取得しました`
+      )
+      
+      // 統計情報を更新
+      await loadStats()
+    } catch (err: any) {
+      setError(err.message || 'WIRED RSSの取得に失敗しました')
+    } finally {
+      setWiredLoading(false)
+    }
+  }
+
+  const handleWiredBotTest = async () => {
+    if (!confirm('WIRED Botを実行しますか？実際にBlueskyに投稿されます。')) {
+      return
+    }
+
+    try {
+      setWiredBotLoading(true)
+      setError(null)
+      setWiredBotResult(null)
+      
+      const result = await wiredApi.testWiredBot()
+      
+      setWiredBotResult(
+        `✅ ${result.message}${result.note ? `\n${result.note}` : ''}`
+      )
+      
+      // 統計情報を更新
+      await loadStats()
+    } catch (err: any) {
+      setError(err.message || 'WIRED Botの実行に失敗しました')
+    } finally {
+      setWiredBotLoading(false)
+    }
+  }
+
   if (loading && !stats) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -117,11 +167,67 @@ export default function Dashboard() {
 
   return (
     <div>
+      {/* WIRED Botセクション */}
+      <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200 mb-8">
+        <h2 className="text-xl font-bold mb-4 text-gray-900 flex items-center gap-2">
+          <Rss className="text-primary-600" size={24} />
+          WIRED Bot
+        </h2>
+        <div className="space-y-4">
+          <div className="flex gap-4">
+            <button
+              onClick={handleWiredRSS}
+              disabled={wiredLoading}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+            >
+              {wiredLoading ? (
+                <>
+                  <Loader2 className="animate-spin" size={20} />
+                  WIRED RSS取得中...
+                </>
+              ) : (
+                <>
+                  <Rss size={20} />
+                  WIRED RSSから記事を取得
+                </>
+              )}
+            </button>
+            <button
+              onClick={handleWiredBotTest}
+              disabled={wiredBotLoading}
+              className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+            >
+              {wiredBotLoading ? (
+                <>
+                  <Loader2 className="animate-spin" size={20} />
+                  実行中...
+                </>
+              ) : (
+                <>
+                  <Play size={20} />
+                  WIRED Botを実行（投稿）
+                </>
+              )}
+            </button>
+          </div>
+          {wiredResult && (
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-blue-800 whitespace-pre-line">{wiredResult}</p>
+            </div>
+          )}
+          {wiredBotResult && (
+            <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-green-800 whitespace-pre-line">{wiredBotResult}</p>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* 記事取得セクション */}
       <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200 mb-8">
         <h2 className="text-xl font-bold mb-4 text-gray-900 flex items-center gap-2">
           <Search className="text-primary-600" size={24} />
-          Gemini Grounding（Google Search）で記事を取得
+          未来の兆し生成（Gemini Grounding）
         </h2>
         <div className="space-y-4">
           <div>

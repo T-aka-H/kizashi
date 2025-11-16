@@ -45,7 +45,39 @@ curl -X POST http://localhost:8000/fetch/research \
 
 ---
 
-### 3. 📰 WIRED Bot機能（追加）
+### 3. 🧪 動作確認用エンドポイント（追加）
+
+**エンドポイント**: `GET/POST /test/wired-bot`
+
+**機能**:
+- WIRED Botを即座に実行（動作確認用）
+- ブラウザから簡単にアクセス可能
+- WIRED記事TOP5を取得してBlueskyに投稿
+
+**使用例**:
+```bash
+# ブラウザから
+https://kizashi-backend.onrender.com/test/wired-bot
+
+# curl で実行
+curl https://kizashi-backend.onrender.com/test/wired-bot
+```
+
+**レスポンス例**:
+```json
+{
+  "status": "success",
+  "message": "WIRED Bot (改良版) の実行が完了しました",
+  "timestamp": "2025-11-09T10:30:00",
+  "note": "Blueskyで投稿を確認してください（POST_MODE=blueskyの場合）"
+}
+```
+
+**注意**: 実際にBlueskyに投稿されます（`POST_MODE=bluesky`の場合）
+
+---
+
+### 4. 📰 WIRED Bot機能（追加）
 
 **ファイル**:
 - `wired_bluesky_bot.py` - 基本版
@@ -87,6 +119,7 @@ curl -X POST http://localhost:8000/fetch/research \
 | `/` | GET | ヘルスチェック | - |
 | `/healthz` | GET | 軽量ヘルスチェック | - |
 | `/health` | GET | 詳細ヘルスチェック | - |
+| `/test/wired-bot` | GET/POST | WIRED Botテスト実行 | ✅ **即座に投稿** |
 | `/fetch/wired-rss` | POST | WIRED RSS取得 | ❌ |
 | `/fetch/research` | POST | 未来の兆し生成 | ✅ **自動投稿あり** |
 
