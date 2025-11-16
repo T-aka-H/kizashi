@@ -8,6 +8,7 @@ from datetime import datetime
 from article_fetcher import ArticleFetcher
 from gemini_analyzer import GeminiAnalyzer
 from twitter_poster import SocialPoster
+from url_shortener import URLShortener
 
 
 class WiredBlueskyBot:
@@ -21,6 +22,7 @@ class WiredBlueskyBot:
         self.fetcher = ArticleFetcher()
         self.analyzer = GeminiAnalyzer()
         self.poster = SocialPoster()
+        self.url_shortener = URLShortener()
         print("✅ WiredBlueskyBot初期化完了")
     
     def fetch_wired_articles(self, max_items: int = 20) -> List[Dict]:
@@ -167,7 +169,13 @@ class WiredBlueskyBot:
     
     def create_post_text_for_article(self, article: Dict, rank: int) -> str:
         """
-        1つの記事の投稿用テキストを作成
+        1つの記事の投稿用テキストを作成（最適化版）
+        
+        【投稿テキスト最適化】
+        - タイトルは必ず全文表示
+        - URL短縮で文字数節約
+        - 要約を優先表示（最低30文字確保）
+        - 280文字制限厳守
         
         Args:
             article: 記事の辞書
@@ -182,46 +190,80 @@ class WiredBlueskyBot:
         
         # ヘッダー（順位付き）
         today = datetime.now().strftime("%m/%d")
-        text = f"📰 WIRED TOP{rank} ({today})\n\n"
+        header = f"📰 WIRED TOP{rank} ({today})"
         
-        # タイトル
-        text += f"【{title}】\n\n"
-        
-        # 要約（RSSのcontentから）
-        if content:
-            # 簡単な要約（最初の100文字）
-            summary = content[:100].strip()
-            if len(content) > 100:
-                summary += "..."
-            text += f"📝 {summary}\n\n"
-        
-        # URL
+        # URL短縮（利用可能な場合）
+        short_url = ""
         if url:
-            text += f"🔗 {url}"
+            try:
+                short_url = self.url_shortener.shorten(url)
+                if not short_url:
+                    short_url = url
+            except Exception as e:
+                print(f"⚠️ URL短縮エラー: {e}")
+                short_url = url
         
-        # 280文字制限に収める
-        if len(text) > 280:
-            # URLの長さを確保
-            url_length = len(url) + 5 if url else 0  # "🔗 " + URL
+        # 投稿テキスト構造の最適化
+        # 【優先順位】
+        # 1. ヘッダー（必須）
+        # 2. タイトル（全文必須）
+        # 3. URL（短縮版）
+        # 4. 要約（最低30文字確保）
+        
+        header_length = len(header) + 2  # +2は改行2つ
+        title_length = len(title) + 4  # "【" + title + "】" + 改行2つ
+        url_length = len(short_url) + 2 if short_url else 0  # URL + 改行2つ
+        
+        # 残り文字数を計算
+        base_length = header_length + title_length + url_length
+        remaining = 280 - base_length
+        
+        # 要約に割り当てる文字数を決定
+        min_summary_length = 30  # 要約の最低文字数
+        
+        if remaining < min_summary_length:
+            # スペースが足りない場合は要約を最低限表示
+            summary_text = content[:min_summary_length - 3] + "..." if len(content) > min_summary_length else content
+        else:
+            # 要約: 最大150文字
+            max_summary = min(150, remaining - 3)  # "📝 " + 改行2つ
+            if len(content) > max_summary:
+                summary_text = content[:max_summary - 3] + "..."
+            else:
+                summary_text = content
+        
+        # 投稿テキストを構築
+        parts = [header, f"【{title}】"]
+        if short_url:
+            parts.append(short_url)
+        if summary_text:
+            parts.append(f"📝 {summary_text}")
+        
+        post_text = "\n\n".join(parts)
+        
+        # 最終検証（280文字厳守）
+        if len(post_text) > 280:
+            print(f"⚠️ 投稿テキストが280文字超過({len(post_text)}文字): {title[:30]}...")
+            # 緊急短縮: 要約を削減
+            parts = [header, f"【{title}】"]
+            if short_url:
+                parts.append(short_url)
             
-            # タイトルを短縮
-            title_short = title[:30] + "..." if len(title) > 30 else title
+            # 要約を再計算
+            base_length = sum(len(p) + 2 for p in parts)
+            remaining = 280 - base_length
+            if remaining > 0:
+                summary_text = content[:remaining - 3] + "..." if len(content) > remaining else content
+                if summary_text:
+                    parts.append(f"📝 {summary_text}")
             
-            # 要約を短縮
-            remaining = 280 - len(f"📰 WIRED TOP{rank} ({today})\n\n【{title_short}】\n\n📝 \n\n") - url_length
-            summary_short = content[:remaining-3] + "..." if len(content) > remaining else content
-            
-            # 再構成
-            text = f"📰 WIRED TOP{rank} ({today})\n\n【{title_short}】\n\n📝 {summary_short}\n\n"
-            
-            if url:
-                text += f"🔗 {url}"
+            post_text = "\n\n".join(parts)
             
             # 最終チェック
-            if len(text) > 280:
-                text = text[:277] + "..."
+            if len(post_text) > 280:
+                post_text = post_text[:277] + "..."
         
-        return text
+        return post_text
     
     def post_articles_to_bluesky(self, top5_articles: List[Dict]) -> Dict[str, int]:
         """
