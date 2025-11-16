@@ -191,19 +191,7 @@ class WiredBlueskyBot:
         Returns:
             投稿テキスト（280文字以内）
         """
-        now = datetime.now()
-        date_str = now.strftime("%m/%d")
-        hour = now.hour
-        # 12時間制に変換（先頭の0を削除）
-        if hour == 0:
-            time_str = "12AM"
-        elif hour < 12:
-            time_str = f"{hour}AM"
-        elif hour == 12:
-            time_str = "12PM"
-        else:
-            time_str = f"{hour-12}PM"
-        header = f"📰 WIRED TOP5 ({date_str} {time_str})"
+        header = "AI選定 WIRED注目記事5選"
         
         lines = [header]
         
@@ -212,12 +200,12 @@ class WiredBlueskyBot:
             title = article.get('title', '無題')
             lines.append(f"{i}位: {title}")
         
-        post_text = "\n\n".join(lines)
+        post_text = " ".join(lines)  # 改行なし、スペース区切り
         
         # 280文字制限チェック
         if len(post_text) > 280:
             # タイトルを短縮
-            post_text = header + "\n\n"
+            post_text = header + " "
             base_length = len(post_text)
             
             for i, article in enumerate(top5_articles[:5], 1):
@@ -234,7 +222,7 @@ class WiredBlueskyBot:
                 if len(title) > max_title_length:
                     title = title[:max_title_length - 3] + "..."
                 
-                post_text += f"{rank_prefix}{title}\n\n"
+                post_text += f"{rank_prefix}{title} "
             
             # 最終チェック
             if len(post_text) > 280:
@@ -258,8 +246,7 @@ class WiredBlueskyBot:
         url = article.get('url', '')
         
         # ヘッダー
-        today = datetime.now().strftime("%m/%d")
-        header = f"📰 WIRED TOP{rank} ({today})"
+        header = "AI選定 WIRED注目記事5選"
         
         # URL短縮
         short_url = ""
@@ -272,21 +259,21 @@ class WiredBlueskyBot:
                 print(f"⚠️ URL短縮エラー: {e}")
                 short_url = url
         
-        # タイトル + 改行2つ
+        # タイトル（改行なし）
         title_section = f"【{title}】"
         
-        # URL + 改行2つ
+        # URL（改行なし）
         url_section = short_url if short_url else ""
         
-        # 要約は250文字を目標（ヘッダー、タイトル、URLを考慮して調整）
-        # ベース長: ヘッダー + タイトル + URL + 改行
-        base_length = len(header) + 2 + len(title_section) + 2
+        # 要約は300文字を目標（ヘッダー、タイトル、URLを考慮して調整、改行なし）
+        # ベース長: ヘッダー + タイトル + URL + スペース（改行の代わり）
+        base_length = len(header) + 1 + len(title_section) + 1
         if url_section:
-            base_length += len(url_section) + 2
+            base_length += len(url_section) + 1
         
-        # 残り文字数で要約を決定（250文字を目標、ただし残り文字数が少ない場合は調整）
+        # 残り文字数で要約を決定（300文字を目標、ただし残り文字数が少ない場合は調整）
         remaining = 280 - base_length
-        target_summary_length = min(250, remaining - 2)  # 改行2つ分を考慮
+        target_summary_length = min(300, remaining - 1)  # スペース1つ分を考慮
         
         if target_summary_length > 0:
             if len(content) > target_summary_length:
@@ -297,31 +284,31 @@ class WiredBlueskyBot:
             # スペースが足りない場合はタイトルを短縮
             title_short = title[:20] + "..." if len(title) > 20 else title
             title_section = f"【{title_short}】"
-            base_length = len(header) + 2 + len(title_section) + 2
+            base_length = len(header) + 1 + len(title_section) + 1
             if url_section:
-                base_length += len(url_section) + 2
+                base_length += len(url_section) + 1
             remaining = 280 - base_length
-            target_summary_length = min(250, remaining - 2)
+            target_summary_length = min(300, remaining - 1)
             if target_summary_length > 0:
                 summary_text = content[:target_summary_length - 3] + "..." if len(content) > target_summary_length else content
             else:
                 summary_text = ""
         
-        # 投稿テキストを構築
+        # 投稿テキストを構築（改行なし、スペース区切り）
         parts = [header, title_section]
         if url_section:
             parts.append(url_section)
         if summary_text:
             parts.append(summary_text)
         
-        post_text = "\n\n".join(parts)
+        post_text = " ".join(parts)
         
         # 最終チェック（280文字厳守）
         if len(post_text) > 280:
             # 要約をさらに短縮
-            base_length = len(header) + 2 + len(title_section) + 2
+            base_length = len(header) + 1 + len(title_section) + 1
             if url_section:
-                base_length += len(url_section) + 2
+                base_length += len(url_section) + 1
             remaining = 280 - base_length
             if remaining > 0:
                 summary_text = content[:remaining - 3] + "..." if len(content) > remaining else content
@@ -330,19 +317,19 @@ class WiredBlueskyBot:
                     parts.append(url_section)
                 if summary_text:
                     parts.append(summary_text)
-                post_text = "\n\n".join(parts)
+                post_text = " ".join(parts)
             else:
                 # タイトルをさらに短縮
                 title_short = title[:15] + "..." if len(title) > 15 else title
                 parts = [header, f"【{title_short}】"]
                 if url_section:
                     parts.append(url_section)
-                remaining = 280 - sum(len(p) + 2 for p in parts)
+                remaining = 280 - sum(len(p) + 1 for p in parts)
                 if remaining > 0:
                     summary_text = content[:remaining - 3] + "..." if len(content) > remaining else content
                     if summary_text:
                         parts.append(summary_text)
-                post_text = "\n\n".join(parts)
+                post_text = " ".join(parts)
         
         # 最終チェック
         if len(post_text) > 280:
