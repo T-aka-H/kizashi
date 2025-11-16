@@ -52,7 +52,7 @@ from models import Article, PostQueue
 from scheduler import ArticleScheduler
 
 # FastAPIアプリ初期化
-app = FastAPI(title="Weak Signals App", version="1.0.0")
+app = FastAPI(title="WIRED Bot API", version="1.0.0")
 
 # CORS設定（必ず最初に追加、順序重要）
 # 401/403エラーでもCORSヘッダが付くように、Basic認証より前に配置
@@ -124,51 +124,82 @@ def initialize_app():
         logger.warning("→ POST_MODE=demo で起動するか、Bluesky認証情報を確認してください")
         poster = None
 
-    # 3. ArticleScheduler の初期化と起動（遅延起動）
-    # 環境変数 DISABLE_SCHEDULER=true でスケジューラーを無効化可能
-    disable_scheduler = os.getenv("DISABLE_SCHEDULER", "false").lower() == "true"
+    # 3. WIRED Botスケジューラーの初期化と起動（Render前提）
+    # 環境変数 DISABLE_WIRED_SCHEDULER=true で無効化可能
+    disable_wired_scheduler = os.getenv("DISABLE_WIRED_SCHEDULER", "false").lower() == "true"
     
-    if disable_scheduler:
-        logger.info("📝 スケジューラーは無効化されています（DISABLE_SCHEDULER=true）")
-        scheduler = None
+    if disable_wired_scheduler:
+        logger.info("📝 WIRED Botスケジューラーは無効化されています（DISABLE_WIRED_SCHEDULER=true）")
     else:
-        # スケジューラーは30秒後に起動（起動時間短縮のため）
-        logger.info("⏳ スケジューラーを30秒後に起動します...")
-        threading.Thread(target=_start_scheduler_delayed, daemon=True, name="SchedulerStarter").start()
+        # WIRED Botスケジューラーをバックグラウンドで起動
+        logger.info("⏳ WIRED Botスケジューラーを起動します...")
+        threading.Thread(target=_start_wired_scheduler_delayed, daemon=True, name="WiredSchedulerStarter").start()
+    
+    # 標準スケジューラーは無効化
+    scheduler = None
     
     _initialized = True
     logger.info("✅ アプリケーション初期化完了")
 
 
-def _start_scheduler_delayed():
+def _start_wired_scheduler_delayed():
     """
-    スケジューラーを遅延起動（30秒後）
+    WIRED Botスケジューラーを遅延起動（30秒後）
     
-    【理由】
-    - 起動時間を短縮するため
-    - Renderのヘルスチェックを早く通過させるため
+    【Render前提】
+    - PCを起動していないときでも投稿できるように、RenderのWeb Service内で実行
+    - 毎朝8時にWIRED記事TOP5を自動投稿
     """
-    global scheduler, _scheduler_thread
+    time.sleep(30)  # 30秒待機（起動時間短縮のため）
     
-    time.sleep(30)  # 30秒待機
-    
-    logger.info("🚀 スケジューラー起動を開始...")
+    logger.info("🚀 WIRED Botスケジューラー起動を開始...")
     
     try:
-        scheduler = ArticleScheduler()
-        interval = int(os.getenv("SCHEDULER_INTERVAL_MINUTES", "15"))
-        _scheduler_thread = threading.Thread(
-            target=scheduler.run_scheduler,
-            args=(interval,),
-            daemon=True,
-            name="ArticleSchedulerThread"
-        )
-        _scheduler_thread.start()
-        logger.info(f"✅ スケジューラー起動完了（{interval}分間隔）")
+        import schedule
+        
+        # 基本版か改良版かを選択
+        use_advanced = os.getenv("USE_ADVANCED_BOT", "true").lower() == "true"
+        
+        if use_advanced:
+            from wired_bluesky_bot_advanced import WiredBlueskyBotAdvanced as WiredBot
+            bot_name = "改良版"
+        else:
+            from wired_bluesky_bot import WiredBlueskyBot as WiredBot
+            bot_name = "基本版"
+        
+        def wired_job():
+            """WIRED Botを実行するジョブ"""
+            logger.info(f"⏰ WIRED Bot実行開始: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            try:
+                bot = WiredBot()
+                bot.run()
+                logger.info("✅ WIRED Bot実行完了")
+            except Exception as e:
+                logger.error(f"⚠️ WIRED Bot実行エラー: {e}", exc_info=True)
+        
+        # 毎朝8時に実行
+        schedule.every().day.at("08:00").do(wired_job)
+        logger.info(f"✅ WIRED Botスケジューラー起動完了（毎朝8:00、{bot_name}）")
+        
+        # スケジューラーをバックグラウンドで実行
+        def run_scheduler():
+            while True:
+                schedule.run_pending()
+                time.sleep(60)  # 1分ごとにチェック
+        
+        scheduler_thread = threading.Thread(target=run_scheduler, daemon=True, name="WiredSchedulerThread")
+        scheduler_thread.start()
+        logger.info("✅ WIRED Botスケジューラースレッド起動完了")
+        
+        # テストモードの場合は即座に1回実行
+        test_mode = os.getenv("TEST_MODE", "false").lower() == "true"
+        if test_mode:
+            logger.info("🧪 テストモード: 今すぐ1回実行します")
+            wired_job()
+        
     except Exception as e:
-        logger.error(f"⚠️ スケジューラー起動エラー: {e}", exc_info=True)
-        logger.warning("→ スケジューラーなしで動作を続行します")
-        scheduler = None
+        logger.error(f"⚠️ WIRED Botスケジューラー起動エラー: {e}", exc_info=True)
+        logger.warning("→ WIRED Botスケジューラーなしで動作を続行します")
 
 
 @app.on_event("startup")
@@ -204,10 +235,9 @@ async def startup_event():
 
 # 記事取得のインスタンス
 article_fetcher = ArticleFetcher()
-feed_manager = get_default_feed_manager()
 
-# URL短縮のインスタンス
-url_shortener = URLShortener()
+# WIREDのRSS URL
+WIRED_RSS_URL = "https://www.wired.com/feed/rss"
 
 
 # Pydanticモデル
@@ -219,8 +249,8 @@ class ArticleCreate(BaseModel):
 
 
 class RSSFeedRequest(BaseModel):
-    rss_url: str
-    max_items: int = 10
+    rss_url: Optional[str] = None  # デフォルトでWIRED RSSを使用
+    max_items: int = 20
 
 
 class URLFetchRequest(BaseModel):
@@ -260,147 +290,20 @@ class PostQueueResponse(BaseModel):
 @app.get("/")
 async def root():
     """ヘルスチェック"""
-    return {"message": "Weak Signals App API", "status": "running"}
+    return {
+        "message": "WIRED Bot API",
+        "status": "running",
+        "features": ["WIRED RSS取得", "未来の兆し生成"]
+    }
 
 
-@app.post("/articles", response_model=ArticleResponse)
-async def create_article_endpoint(
-    article: ArticleCreate,
-    db: Session = Depends(get_db)
-):
-    """記事を作成"""
-    # 既存チェック
-    existing = get_article_by_url(db, article.url)
-    if existing:
-        raise HTTPException(status_code=400, detail="記事は既に存在します")
-    
-    # 記事作成
-    db_article = create_article(
-        db, article.url, article.title, article.content, article.published_at
-    )
-    
-    return db_article
-
-
-@app.post("/articles/{article_id}/analyze", response_model=ArticleResponse)
-async def analyze_article_endpoint(
-    article_id: int,
-    db: Session = Depends(get_db)
-):
-    """記事を分析"""
-    article = db.query(Article).filter(Article.id == article_id).first()
-    if not article:
-        raise HTTPException(status_code=404, detail="記事が見つかりません")
-    
-    # Geminiで分析
-    analysis = analyzer.analyze_article(article.title, article.content or "", article.url)
-    
-    # 結果を保存
-    updated_article = update_article_analysis(db, article_id, analysis)
-    
-    # 投稿候補の場合、キューに追加
-    if analysis.get("should_post", False):
-        # URLを短縮
-        short_url = url_shortener.shorten(article.url)
-        tweet_text = analyzer.generate_tweet_text(
-            article.title, analysis.get("summary"), analysis.get("theme"), short_url
-        )
-        add_to_post_queue(db, article_id, tweet_text)
-    
-    return updated_article
-
-
-@app.get("/articles", response_model=List[ArticleResponse])
-async def list_articles(
-    skip: int = 0,
-    limit: int = 100,
-    theme: Optional[str] = None,
-    db: Session = Depends(get_db)
-):
-    """記事一覧を取得"""
-    query = db.query(Article)
-    
-    if theme:
-        query = query.filter(Article.theme == theme)
-    
-    articles = query.order_by(Article.created_at.desc()).offset(skip).limit(limit).all()
-    return articles
-
-
-@app.get("/articles/{article_id}", response_model=ArticleResponse)
-async def get_article(article_id: int, db: Session = Depends(get_db)):
-    """記事を取得"""
-    article = db.query(Article).filter(Article.id == article_id).first()
-    if not article:
-        raise HTTPException(status_code=404, detail="記事が見つかりません")
-    return article
-
-
-@app.get("/post-queue", response_model=List[PostQueueResponse])
-async def list_post_queue(
-    status: Optional[str] = "pending",
-    db: Session = Depends(get_db)
-):
-    """投稿キューを取得"""
-    query = db.query(PostQueue)
-    if status:
-        query = query.filter(PostQueue.status == status)
-    
-    queue_items = query.order_by(PostQueue.created_at.desc()).all()
-    return queue_items
-
-
-@app.post("/post-queue/{queue_id}/approve")
-async def approve_post(
-    queue_id: int,
-    db: Session = Depends(get_db)
-):
-    """投稿を承認"""
-    queue_item = db.query(PostQueue).filter(PostQueue.id == queue_id).first()
-    if not queue_item:
-        raise HTTPException(status_code=404, detail="キューアイテムが見つかりません")
-    
-    queue_item.status = "approved"
-    queue_item.approved_at = datetime.utcnow()
-    db.commit()
-    
-    return {"message": "承認完了", "queue_id": queue_id}
-
-
-@app.post("/post-queue/{queue_id}/post")
-async def post_to_social(
-    queue_id: int,
-    request: PostRequest,
-    db: Session = Depends(get_db)
-):
-    """ソーシャルメディアに投稿（投稿確認パスワード必要）"""
-    if not poster:
-        raise HTTPException(status_code=503, detail="ソーシャルメディア設定がありません")
-    
-    # 投稿確認パスワードを検証
-    if not verify_post_password(request.confirm_password):
-        raise HTTPException(status_code=403, detail="投稿パスワードが間違っています")
-    
-    queue_item = db.query(PostQueue).filter(PostQueue.id == queue_id).first()
-    if not queue_item:
-        raise HTTPException(status_code=404, detail="キューアイテムが見つかりません")
-    
-    # ソーシャルメディアに投稿
-    result = poster.post(queue_item.post_text)
-    if not result:
-        raise HTTPException(status_code=500, detail="投稿に失敗しました")
-    
-    # ステータス更新
-    queue_item.status = "posted"
-    article = db.query(Article).filter(Article.id == queue_item.article_id).first()
-    if article:
-        article.is_posted = True
-        article.posted_at = datetime.utcnow()
-        article.tweet_id = result.get("post_id")  # post_idに統一
-    
-    db.commit()
-    
-    return {"message": "投稿完了", "post_id": result.get("post_id"), "platform": result.get("platform")}
+# 記事管理機能は削除（WIRED RSSと未来の兆し生成のみ使用）
+# @app.post("/articles", ...) - 削除
+# @app.get("/articles", ...) - 削除
+# @app.post("/articles/{article_id}/analyze", ...) - 削除
+# @app.get("/post-queue", ...) - 削除
+# @app.post("/post-queue/{queue_id}/approve", ...) - 削除
+# @app.post("/post-queue/{queue_id}/post", ...) - 削除
 
 
 @app.get("/healthz")
@@ -458,87 +361,48 @@ async def health_check_detailed(db: Session = Depends(get_db)):
     }
 
 
-@app.get("/stats")
-async def get_stats(db: Session = Depends(get_db)):
-    """統計情報を取得"""
-    total_articles = db.query(Article).count()
-    posted_articles = db.query(Article).filter(Article.is_posted == True).count()
-    pending_posts = db.query(PostQueue).filter(PostQueue.status == "pending").count()
-    
-    # テーマ別集計
-    themes = db.query(Article.theme).distinct().all()
-    theme_count = len([t for t in themes if t[0]])
-    
-    return {
-        "total_articles": total_articles,
-        "posted_articles": posted_articles,
-        "pending_posts": pending_posts,
-        "themes": theme_count
-    }
+# 統計情報機能は削除（WIRED RSSと未来の兆し生成のみ使用）
+# @app.get("/stats", ...) - 削除
 
 
-@app.post("/fetch/rss")
-async def fetch_from_rss(
+@app.post("/fetch/wired-rss")
+async def fetch_wired_rss(
     request: RSSFeedRequest,
     db: Session = Depends(get_db)
 ):
-    """RSSフィードから記事を取得"""
+    """
+    WIRED RSSから記事を取得
+    
+    【機能】
+    - WIREDのRSSフィードから記事を取得
+    - デフォルトでWIRED RSSを使用
+    """
     try:
-        articles = article_fetcher.fetch_from_rss(request.rss_url, request.max_items)
+        # WIRED RSS URL（デフォルト）
+        rss_url = request.rss_url or WIRED_RSS_URL
+        articles = article_fetcher.fetch_from_rss(rss_url, request.max_items)
         
-        created_count = 0
-        for article_data in articles:
-            # 既存チェック
-            existing = get_article_by_url(db, article_data['url'])
-            if not existing:
-                create_article(
-                    db,
-                    article_data['url'],
-                    article_data['title'],
-                    article_data.get('content'),
-                    article_data.get('published_at')
-                )
-                created_count += 1
+        logger.info(f"✅ {len(articles)}件のWIRED記事を取得しました")
         
         return {
-            "message": "記事取得完了",
+            "message": "WIRED記事取得完了",
             "fetched": len(articles),
-            "created": created_count
+            "articles": [
+                {
+                    "title": a.get("title"),
+                    "url": a.get("url"),
+                    "published_at": a.get("published_at").isoformat() if a.get("published_at") else None
+                }
+                for a in articles[:10]  # 最初の10件のみ返す
+            ]
         }
     except Exception as e:
+        logger.error(f"⚠️ WIRED RSS取得エラー: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"取得エラー: {str(e)}")
 
 
-@app.post("/fetch/url")
-async def fetch_from_url(
-    request: URLFetchRequest,
-    db: Session = Depends(get_db)
-):
-    """URLから記事を取得"""
-    try:
-        articles = article_fetcher.fetch_from_urls(request.urls)
-        
-        created_count = 0
-        for article_data in articles:
-            # 既存チェック
-            existing = get_article_by_url(db, article_data['url'])
-            if not existing:
-                create_article(
-                    db,
-                    article_data['url'],
-                    article_data['title'],
-                    article_data.get('content'),
-                    article_data.get('published_at')
-                )
-                created_count += 1
-        
-        return {
-            "message": "記事取得完了",
-            "fetched": len(articles),
-            "created": created_count
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"取得エラー: {str(e)}")
+# URL取得機能は削除（WIRED RSSのみ使用）
+# @app.post("/fetch/url", ...) - 削除
 
 
 @app.post("/fetch/research")
@@ -683,71 +547,8 @@ async def fetch_by_research(
         raise HTTPException(status_code=500, detail=f"エラー: {str(e)}")
 
 
-@app.post("/fetch/analyze")
-async def fetch_and_analyze(
-    rss_url: Optional[str] = None,
-    db: Session = Depends(get_db)
-):
-    """記事を取得して自動分析（RSSフィードまたはデフォルト）"""
-    try:
-        if rss_url:
-            # 指定されたRSSフィードから取得
-            articles = article_fetcher.fetch_from_rss(rss_url)
-        else:
-            # デフォルトのフィードから取得
-            articles = feed_manager.fetch_all_feeds()
-        
-        processed_count = 0
-        analyzed_count = 0
-        queued_count = 0
-        
-        for article_data in articles:
-            url = article_data['url']
-            title = article_data['title']
-            content = article_data.get('content', '')
-            
-            # 既存チェック
-            existing = get_article_by_url(db, url)
-            if existing:
-                continue
-            
-            # 記事作成
-            article = create_article(
-                db,
-                url,
-                title,
-                content,
-                article_data.get('published_at')
-            )
-            processed_count += 1
-            
-            # 分析
-            try:
-                analysis = analyzer.analyze_article(title, content, url)
-                update_article_analysis(db, article.id, analysis)
-                analyzed_count += 1
-                
-                # 投稿候補の場合、キューに追加
-                if analysis.get("should_post", False):
-                    # URLを短縮
-                    short_url = url_shortener.shorten(url)
-                    tweet_text = analyzer.generate_tweet_text(
-                        title, analysis.get("summary"), analysis.get("theme"), short_url
-                    )
-                    add_to_post_queue(db, article.id, tweet_text)
-                    queued_count += 1
-            except Exception as e:
-                print(f"分析エラー: {e}")
-                continue
-        
-        return {
-            "message": "取得・分析完了",
-            "processed": processed_count,
-            "analyzed": analyzed_count,
-            "queued": queued_count
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"エラー: {str(e)}")
+# 自動取得・分析機能は削除（WIRED RSSと未来の兆し生成のみ使用）
+# @app.post("/fetch/analyze", ...) - 削除
 
 
 if __name__ == "__main__":
