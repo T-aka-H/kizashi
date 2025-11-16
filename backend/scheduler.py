@@ -197,7 +197,7 @@ class ArticleScheduler:
                 article = create_article(db, url, title, content, published_at)
                 print(f"📝 記事作成: {title[:50]}...")
                 
-                # OpenAIで分析
+                # Geminiで分析
                 try:
                     analysis = self.analyzer.analyze_article(title, content or "", url)
                     print(f"🔍 分析完了: テーマ={analysis.get('theme')}")
@@ -295,10 +295,10 @@ class ArticleScheduler:
     
     def _process_research_articles(self, articles: List[Dict]):
         """
-        OpenAI DeepResearchで取得した記事を処理（作成・キュー追加・自動投稿）
+        取得した記事を処理（作成・キュー追加・自動投稿）
         
         Args:
-            articles: 記事のリスト（OpenAI DeepResearchから取得）
+            articles: 記事のリスト
         """
         db = SessionLocal()
         

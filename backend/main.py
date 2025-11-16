@@ -292,7 +292,7 @@ async def analyze_article_endpoint(
     if not article:
         raise HTTPException(status_code=404, detail="記事が見つかりません")
     
-    # OpenAIで分析
+    # Geminiで分析
     analysis = analyzer.analyze_article(article.title, article.content or "", article.url)
     
     # 結果を保存

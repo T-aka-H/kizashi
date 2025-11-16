@@ -1,10 +1,10 @@
 # Weak Signals App
 
-OpenAI DeepResearchを使用した記事分析とBluesky自動投稿アプリケーション
+Gemini APIを使用した記事分析とBluesky自動投稿アプリケーション
 
 ## 機能
 
-- 📰 記事の自動取得と分析（OpenAI DeepResearch）
+- 📰 記事の自動取得と分析（Gemini API + WIRED RSS）
 - 🔍 テーマ分類、要約、主要ポイント抽出
 - 📤 ソーシャルメディア投稿キュー管理（Bluesky）
 - ✅ 投稿承認フロー
@@ -30,7 +30,7 @@ copy .env.example .env  # Windows
 # または
 cp .env.example .env   # macOS/Linux
 
-# .envファイルを編集してOpenAI APIキーを設定
+# .envファイルを編集してGemini APIキーを設定
 
 # サーバー起動
 cd backend
@@ -92,7 +92,7 @@ cp .env.example .env
 `.env`ファイルを編集：
 
 ```env
-OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+GEMINI_API_KEY=AIzaSyC...
 
 # 投稿モード設定（bluesky, demo）
 POST_MODE=demo
@@ -104,11 +104,11 @@ BLUESKY_PASSWORD=xxxx-xxxx-xxxx-xxxx
 
 ### 3. APIキーの取得
 
-#### OpenAI API
-1. [OpenAI Platform](https://platform.openai.com/)にアクセス
-2. アカウントを作成（またはログイン）
-3. 「API keys」→「Create new secret key」をクリック
-4. 生成されたAPIキーをコピー（`sk-`で始まる文字列）
+#### Gemini API
+1. [Google AI Studio](https://makersuite.google.com/app/apikey)にアクセス
+2. Googleアカウントでログイン
+3. 「Create API Key」をクリック
+4. 生成されたAPIキーをコピー（`AIza...`で始まる文字列）
 5. `.env`に設定
 
 #### Bluesky
@@ -150,9 +150,8 @@ APIドキュメント: http://localhost:8000/docs
 weak-signals-app/
 ├── backend/
 │   ├── main.py                  # FastAPI メインアプリ
-│   ├── openai_analyzer.py       # OpenAI API連携（通常の要約）
-│   ├── openai_researcher.py    # OpenAI DeepResearch連携（Web検索＋浅推論）
-│   ├── twitter_poster.py        # X API連携
+│   ├── gemini_analyzer.py       # Gemini API連携（記事分析）
+│   ├── twitter_poster.py        # Bluesky API連携
 │   ├── article_fetcher.py      # 記事取得（RSS/スクレイピング）
 │   ├── database.py              # DB操作
 │   ├── models.py                # データモデル
@@ -202,10 +201,10 @@ weak-signals-app/
 
 ```python
 from database import SessionLocal, create_article, update_article_analysis
-from openai_analyzer import OpenAIAnalyzer
+from gemini_analyzer import GeminiAnalyzer
 
 db = SessionLocal()
-analyzer = OpenAIAnalyzer()
+analyzer = GeminiAnalyzer()
 
 # 記事作成
 article = create_article(
