@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { statsApi, Stats, researchApi, wiredApi } from '@/lib/api'
+import { useState } from 'react' // useEffectは削除（統計情報エンドポイントが存在しないため）
+import { Stats, researchApi, wiredApi } from '@/lib/api' // statsApiは削除（/statsエンドポイントが存在しないため）
 import { FileText, Send, Clock, Tag, Search, Loader2, Rss, Play } from 'lucide-react'
 
 export default function Dashboard() {
@@ -17,7 +17,7 @@ export default function Dashboard() {
   const [wiredBotLoading, setWiredBotLoading] = useState(false)
   const [wiredBotResult, setWiredBotResult] = useState<string | null>(null)
 
-  // 統計情報エンドポイントは削除されているため、loadStatsを呼び出さない
+  // 統計情報エンドポイントは削除されているため、loadStats関数とuseEffectは削除
   // useEffect(() => {
   //   loadStats()
   //   // 統計情報が利用可能な場合のみ30秒ごとに更新
@@ -27,38 +27,7 @@ export default function Dashboard() {
   //   }
   // }, [statsAvailable])
 
-  const loadStats = async () => {
-    // 統計情報が利用不可の場合はスキップ
-    if (!statsAvailable) {
-      return
-    }
-
-    try {
-      setLoading(true)
-      const data = await statsApi.getStats()
-      setStats(data)
-      setError(null)
-    } catch (err: any) {
-      // 401エラーの場合は認証が必要（リダイレクトはapi.tsで処理）
-      if (err.response?.status === 401) {
-        setError('認証が必要です。ログインページにリダイレクトします...')
-        return
-      }
-      
-      // 404エラーまたはCORSエラーの場合は統計情報エンドポイントが存在しない（削除されている）
-      if (err.response?.status === 404 || err.message?.includes('CORS') || err.message?.includes('Failed to fetch')) {
-        setStatsAvailable(false)
-        setStats(null)
-        setError(null) // エラーを表示しない（正常な状態として扱う）
-        return
-      }
-      
-      // その他のエラー
-      setError(err.message || '統計情報の取得に失敗しました')
-    } finally {
-      setLoading(false)
-    }
-  }
+  // loadStats関数は削除（/statsエンドポイントが存在しないため）
 
   const handleResearch = async () => {
     if (!researchThemes.trim()) {
@@ -77,10 +46,10 @@ export default function Dashboard() {
         `✅ 取得完了: ${result.processed}件の記事を処理、${result.analyzed}件を分析、${result.queued}件をキューに追加しました`
       )
       
-      // 統計情報を更新（利用可能な場合のみ）
-      if (statsAvailable) {
-        await loadStats()
-      }
+      // 統計情報エンドポイントは削除されているため、更新しない
+      // if (statsAvailable) {
+      //   await loadStats()
+      // }
       
       // テーマ入力欄をクリア
       setResearchThemes('')
@@ -103,10 +72,10 @@ export default function Dashboard() {
         `✅ WIRED RSS取得完了: ${result.articles_count}件の記事を取得しました`
       )
       
-      // 統計情報を更新（利用可能な場合のみ）
-      if (statsAvailable) {
-        await loadStats()
-      }
+      // 統計情報エンドポイントは削除されているため、更新しない
+      // if (statsAvailable) {
+      //   await loadStats()
+      // }
     } catch (err: any) {
       setError(err.message || 'WIRED RSSの取得に失敗しました')
     } finally {
@@ -130,10 +99,10 @@ export default function Dashboard() {
         `✅ ${result.message}${result.note ? `\n${result.note}` : ''}`
       )
       
-      // 統計情報を更新（利用可能な場合のみ）
-      if (statsAvailable) {
-        await loadStats()
-      }
+      // 統計情報エンドポイントは削除されているため、更新しない
+      // if (statsAvailable) {
+      //   await loadStats()
+      // }
     } catch (err: any) {
       setError(err.message || 'WIRED Botの実行に失敗しました')
     } finally {
@@ -151,19 +120,20 @@ export default function Dashboard() {
   }
 
   // エラー表示（統計情報のエラーは表示しない、404の場合は正常な状態として扱う）
-  if (error && statsAvailable) {
-    return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-        <p className="text-red-800">{error}</p>
-        <button
-          onClick={loadStats}
-          className="mt-2 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-        >
-          再試行
-        </button>
-      </div>
-    )
-  }
+  // 統計情報エンドポイントは削除されているため、このセクションは表示されない
+  // if (error && statsAvailable) {
+  //   return (
+  //     <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+  //       <p className="text-red-800">{error}</p>
+  //       <button
+  //         onClick={loadStats}
+  //         className="mt-2 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+  //       >
+  //         再試行
+  //       </button>
+  //     </div>
+  //   )
+  // }
 
   const statCards = [
     {
