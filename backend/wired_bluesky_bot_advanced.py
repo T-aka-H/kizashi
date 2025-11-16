@@ -199,7 +199,7 @@ class WiredBlueskyBotAdvanced:
     
     def create_top5_summary_post(self, top5_articles: List[Dict]) -> str:
         """
-        TOP5の一覧投稿を作成（題名と短縮リンクのみ）
+        TOP5の一覧投稿を作成（題名のみ、リンクなし）
         
         Args:
             top5_articles: TOP5の記事リスト
@@ -223,26 +223,10 @@ class WiredBlueskyBotAdvanced:
         
         lines = [header]
         
-        for i, article in enumerate(top5_articles, 1):
+        # 5位まで表示（リンクなし、タイトルのみ）
+        for i, article in enumerate(top5_articles[:5], 1):
             title = article.get('title', '無題')
-            url = article.get('url', '')
-            
-            # URL短縮
-            short_url = ""
-            if url:
-                try:
-                    short_url = self.url_shortener.shorten(url)
-                    if not short_url:
-                        short_url = url
-                except Exception as e:
-                    print(f"⚠️ URL短縮エラー: {e}")
-                    short_url = url
-            
-            # 1位: 題名 + 短縮リンク
-            if short_url:
-                lines.append(f"{i}位: {title}\n{short_url}")
-            else:
-                lines.append(f"{i}位: {title}")
+            lines.append(f"{i}位: {title}")
         
         post_text = "\n\n".join(lines)
         
@@ -250,31 +234,23 @@ class WiredBlueskyBotAdvanced:
         if len(post_text) > 280:
             # タイトルを短縮
             post_text = header + "\n\n"
-            for i, article in enumerate(top5_articles, 1):
+            base_length = len(post_text)
+            
+            for i, article in enumerate(top5_articles[:5], 1):
                 title = article.get('title', '無題')
-                url = article.get('url', '')
-                
-                short_url = ""
-                if url:
-                    try:
-                        short_url = self.url_shortener.shorten(url) or url
-                    except:
-                        short_url = url
                 
                 # 残り文字数を計算
                 remaining = 280 - len(post_text) - 10  # 余裕を持たせる
-                if remaining < 20:
+                if remaining < 15:  # 最低限の文字数
                     break
                 
                 # タイトルを短縮
-                max_title_length = remaining - len(short_url) - 10 if short_url else remaining - 5
+                rank_prefix = f"{i}位: "
+                max_title_length = remaining - len(rank_prefix) - 3  # "..."の分
                 if len(title) > max_title_length:
                     title = title[:max_title_length - 3] + "..."
                 
-                if short_url:
-                    post_text += f"{i}位: {title}\n{short_url}\n\n"
-                else:
-                    post_text += f"{i}位: {title}\n\n"
+                post_text += f"{rank_prefix}{title}\n\n"
             
             # 最終チェック
             if len(post_text) > 280:
