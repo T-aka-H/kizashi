@@ -152,7 +152,7 @@ class WiredBlueskyBot:
 
 以下のJSON形式で回答してください（余計な説明は不要、JSONのみ）:
 {{
-    "summary": "記事の要旨（100文字以内）",
+    "summary": "記事の要旨（150文字以内、できるだけ詳しく）",
     "key_point": "最も重要なポイント（100文字以内）"
 }}
 """
@@ -200,12 +200,12 @@ class WiredBlueskyBot:
             title = article.get('title', '無題')
             lines.append(f"{i}位: {title}")
         
-        post_text = " ".join(lines)  # 改行なし、スペース区切り
+        post_text = "\n\n".join(lines)  # 改行あり（見やすくするため）
         
         # 280文字制限チェック
         if len(post_text) > 280:
             # タイトルを短縮
-            post_text = header + " "
+            post_text = header + "\n\n"
             base_length = len(post_text)
             
             for i, article in enumerate(top5_articles[:5], 1):
@@ -222,7 +222,7 @@ class WiredBlueskyBot:
                 if len(title) > max_title_length:
                     title = title[:max_title_length - 3] + "..."
                 
-                post_text += f"{rank_prefix}{title} "
+                post_text += f"{rank_prefix}{title}\n\n"
             
             # 最終チェック
             if len(post_text) > 280:
@@ -265,15 +265,15 @@ class WiredBlueskyBot:
         # URL（改行なし）
         url_section = short_url if short_url else ""
         
-        # 要約は300文字を目標（ヘッダー、タイトル、URLを考慮して調整、改行なし）
+        # 要約は150文字を目標（ヘッダー、タイトル、URLを考慮して調整、改行なし）
         # ベース長: ヘッダー + タイトル + URL + スペース（改行の代わり）
         base_length = len(header) + 1 + len(title_section) + 1
         if url_section:
             base_length += len(url_section) + 1
         
-        # 残り文字数で要約を決定（300文字を目標、ただし残り文字数が少ない場合は調整）
+        # 残り文字数で要約を決定（150文字を目標、ただし残り文字数が少ない場合は調整）
         remaining = 280 - base_length
-        target_summary_length = min(300, remaining - 1)  # スペース1つ分を考慮
+        target_summary_length = min(150, remaining - 1)  # スペース1つ分を考慮
         
         if target_summary_length > 0:
             if len(content) > target_summary_length:
@@ -288,7 +288,7 @@ class WiredBlueskyBot:
             if url_section:
                 base_length += len(url_section) + 1
             remaining = 280 - base_length
-            target_summary_length = min(300, remaining - 1)
+            target_summary_length = min(150, remaining - 1)
             if target_summary_length > 0:
                 summary_text = content[:target_summary_length - 3] + "..." if len(content) > target_summary_length else content
             else:
