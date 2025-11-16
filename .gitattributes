@@ -1,0 +1,26 @@
+# 改行コードの自動変換設定
+# Windows環境でも一貫した改行コードを維持
+
+# テキストファイルは自動的にLFに統一（リポジトリ内）
+* text=auto eol=lf
+
+# ただし、Windows用のバッチファイルはCRLFを維持
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# バイナリファイルは変換しない
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.db binary
+*.sqlite binary
+*.sqlite3 binary
+
+# package-lock.jsonは自動変換（npmが生成するため）
+package-lock.json text eol=lf
+

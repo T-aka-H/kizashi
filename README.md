@@ -1,10 +1,10 @@
 # Weak Signals App
 
-Gemini APIを使用した記事分析とBluesky自動投稿アプリケーション
+OpenAI DeepResearchを使用した記事分析とBluesky自動投稿アプリケーション
 
 ## 機能
 
-- 📰 記事の自動取得と分析（Gemini API）
+- 📰 記事の自動取得と分析（OpenAI DeepResearch）
 - 🔍 テーマ分類、要約、主要ポイント抽出
 - 📤 ソーシャルメディア投稿キュー管理（Bluesky）
 - ✅ 投稿承認フロー
@@ -16,20 +16,27 @@ Gemini APIを使用した記事分析とBluesky自動投稿アプリケーショ
 
 ### ローカル開発
 
+詳細な手順は [LOCAL_SETUP.md](./LOCAL_SETUP.md) を参照してください。
+
 #### バックエンド
 
 ```bash
 cd backend
 pip install -r requirements.txt
 
-# 環境変数を設定
-cp ../.env.example .env
-# .envファイルを編集してAPIキーを設定
+# 環境変数を設定（プロジェクトルートで実行）
+cd ..
+copy .env.example .env  # Windows
+# または
+cp .env.example .env   # macOS/Linux
+
+# .envファイルを編集してOpenAI APIキーを設定
 
 # サーバー起動
+cd backend
 python main.py
-# または
-uvicorn main:app --reload
+# または（開発モード）
+uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 #### フロントエンド
@@ -41,6 +48,10 @@ npm install
 # 開発サーバー起動
 npm run dev
 ```
+
+**アクセスURL**:
+- フロントエンド: http://localhost:3000
+- APIドキュメント: http://localhost:8000/docs
 
 ### Renderへのデプロイ
 
@@ -81,22 +92,24 @@ cp .env.example .env
 `.env`ファイルを編集：
 
 ```env
-GEMINI_API_KEY=your_gemini_api_key_here
+OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 # 投稿モード設定（bluesky, demo）
 POST_MODE=demo
 
-# Bluesky設定
+# Bluesky設定（POST_MODE=blueskyの場合に必要）
 BLUESKY_HANDLE=yourname.bsky.social
 BLUESKY_PASSWORD=xxxx-xxxx-xxxx-xxxx
 ```
 
 ### 3. APIキーの取得
 
-#### Gemini API
-1. [Google AI Studio](https://makersuite.google.com/app/apikey)にアクセス
-2. APIキーを生成
-3. `.env`に設定
+#### OpenAI API
+1. [OpenAI Platform](https://platform.openai.com/)にアクセス
+2. アカウントを作成（またはログイン）
+3. 「API keys」→「Create new secret key」をクリック
+4. 生成されたAPIキーをコピー（`sk-`で始まる文字列）
+5. `.env`に設定
 
 #### Bluesky
 詳細は [BLUESKY_SETUP.md](./BLUESKY_SETUP.md) を参照してください。
@@ -137,7 +150,8 @@ APIドキュメント: http://localhost:8000/docs
 weak-signals-app/
 ├── backend/
 │   ├── main.py                  # FastAPI メインアプリ
-│   ├── gemini_analyzer.py       # Gemini API連携
+│   ├── openai_analyzer.py       # OpenAI API連携（通常の要約）
+│   ├── openai_researcher.py    # OpenAI DeepResearch連携（Web検索＋浅推論）
 │   ├── twitter_poster.py        # X API連携
 │   ├── article_fetcher.py      # 記事取得（RSS/スクレイピング）
 │   ├── database.py              # DB操作
@@ -188,10 +202,10 @@ weak-signals-app/
 
 ```python
 from database import SessionLocal, create_article, update_article_analysis
-from gemini_analyzer import GeminiAnalyzer
+from openai_analyzer import OpenAIAnalyzer
 
 db = SessionLocal()
-analyzer = GeminiAnalyzer()
+analyzer = OpenAIAnalyzer()
 
 # 記事作成
 article = create_article(

@@ -1,70 +1,206 @@
 """
 FastAPI メインアプリケーション
+
+【Render デプロイ対応】
+- 環境変数は Render の Environment Variables から取得
+- .env ファイルが存在しない場合でもエラーにならない
+- Start Command: uvicorn main:app --host 0.0.0.0 --port $PORT
 """
+import os
+import sys
+import logging
+import time
+import threading
+from pathlib import Path
+from dotenv import load_dotenv
+
+# ロギング設定
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# .envファイルを読み込む（ローカル開発用、ファイルが存在する場合のみ）
+# Render では環境変数が直接設定されるため、.env ファイルは不要
+env_path = Path(__file__).parent.parent / '.env'
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path)
+    logger.info(f"✅ .envファイルを読み込みました: {env_path}")
+else:
+    logger.info("📝 .envファイルが見つかりません（環境変数から直接取得します）")
+
+# ↓ ここから既存のimport
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 
 from database import get_db, init_db, create_article, get_article_by_url, update_article_analysis
 from database import add_to_post_queue, get_pending_posts
 from gemini_analyzer import GeminiAnalyzer
-from gemini_researcher import GeminiResearcher
 from twitter_poster import SocialPoster
 from article_fetcher import ArticleFetcher, RSSFeedManager, get_default_feed_manager
 from url_shortener import URLShortener
 from auth import BasicAuthMiddleware, AUTH_ENABLED, verify_post_password
 from models import Article, PostQueue
 from scheduler import ArticleScheduler
-import threading
 
 # FastAPIアプリ初期化
 app = FastAPI(title="Weak Signals App", version="1.0.0")
 
-# Basic認証ミドルウェア（CORSより前に追加）
-if AUTH_ENABLED:
-    app.add_middleware(BasicAuthMiddleware)
-    print("🔐 Basic認証が有効です")
-
-# CORS設定
+# CORS設定（必ず最初に追加、順序重要）
+# 401/403エラーでもCORSヘッダが付くように、Basic認証より前に配置
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 本番環境では適切に設定
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# データベース初期化
-init_db()
+# Basic認証ミドルウェア（CORSより後に追加、OPTIONSはスキップ）
+if AUTH_ENABLED:
+    app.add_middleware(BasicAuthMiddleware)
+    print("🔐 Basic認証が有効です")
 
-# アナライザーとポスターのインスタンス
-analyzer = GeminiAnalyzer()
-try:
-    researcher = GeminiResearcher()
-except Exception as e:
-    print(f"⚠️ GeminiResearcher初期化エラー: {e}")
-    researcher = None
+# データベース初期化は startup イベントで実行
+# init_db()  # ← コメントアウト（後で startup イベントで実行）
 
-try:
-    poster = SocialPoster()
-except Exception as e:
-    print(f"⚠️ ソーシャルポスター初期化エラー: {e}")
-    poster = None
+# アナライザーとポスターのインスタンス（グローバル変数として初期化）
+analyzer = None
+poster = None
+scheduler = None
+_scheduler_thread = None
 
-# スケジューラーの初期化と起動（バックグラウンド）
-try:
-    scheduler = ArticleScheduler()
-    # スケジューラーをバックグラウンドスレッドで起動
-    scheduler_thread = threading.Thread(target=scheduler.run_scheduler, args=(15,), daemon=True)
-    scheduler_thread.start()
-    print("✅ スケジューラーをバックグラウンドで起動しました（15分間隔）")
-except Exception as e:
-    print(f"⚠️ スケジューラー起動エラー: {e}")
-    import traceback
-    traceback.print_exc()
+# 初期化フラグ（二重実行防止）
+_initialized = False
+_startup_complete = False
+
+def initialize_app():
+    """
+    アプリケーションの初期化（一度だけ実行）
+    
+    【エラーハンドリング】
+    - 各コンポーネントの初期化に失敗してもアプリは起動し続ける
+    - エラーはログに記録され、該当機能のみが無効化される
+    - Render では環境変数が正しく設定されていることが前提
+    """
+    global analyzer, poster, scheduler, _scheduler_thread, _initialized
+    
+    if _initialized:
+        logger.info("既に初期化済みです")
+        return  # 既に初期化済み
+    
+    logger.info("🚀 アプリケーション初期化を開始...")
+    
+    # 1. GeminiAnalyzer の初期化
+    try:
+        analyzer = GeminiAnalyzer()
+        logger.info("✅ GeminiAnalyzer初期化成功")
+    except ValueError as e:
+        # 環境変数が設定されていない場合
+        logger.warning(f"⚠️ GeminiAnalyzer初期化スキップ: {e}")
+        logger.warning("→ GEMINI_API_KEY が設定されていません")
+        analyzer = None
+    except Exception as e:
+        logger.error(f"⚠️ GeminiAnalyzer初期化エラー: {e}", exc_info=True)
+        analyzer = None
+
+    # 2. SocialPoster の初期化
+    try:
+        poster = SocialPoster()
+        logger.info("✅ SocialPoster初期化成功")
+    except Exception as e:
+        logger.warning(f"⚠️ SocialPoster初期化エラー: {e}")
+        logger.warning("→ POST_MODE=demo で起動するか、Bluesky認証情報を確認してください")
+        poster = None
+
+    # 3. ArticleScheduler の初期化と起動（遅延起動）
+    # 環境変数 DISABLE_SCHEDULER=true でスケジューラーを無効化可能
+    disable_scheduler = os.getenv("DISABLE_SCHEDULER", "false").lower() == "true"
+    
+    if disable_scheduler:
+        logger.info("📝 スケジューラーは無効化されています（DISABLE_SCHEDULER=true）")
+        scheduler = None
+    else:
+        # スケジューラーは30秒後に起動（起動時間短縮のため）
+        logger.info("⏳ スケジューラーを30秒後に起動します...")
+        threading.Thread(target=_start_scheduler_delayed, daemon=True, name="SchedulerStarter").start()
+    
+    _initialized = True
+    logger.info("✅ アプリケーション初期化完了")
+
+
+def _start_scheduler_delayed():
+    """
+    スケジューラーを遅延起動（30秒後）
+    
+    【理由】
+    - 起動時間を短縮するため
+    - Renderのヘルスチェックを早く通過させるため
+    """
+    global scheduler, _scheduler_thread
+    
+    time.sleep(30)  # 30秒待機
+    
+    logger.info("🚀 スケジューラー起動を開始...")
+    
+    try:
+        scheduler = ArticleScheduler()
+        interval = int(os.getenv("SCHEDULER_INTERVAL_MINUTES", "15"))
+        _scheduler_thread = threading.Thread(
+            target=scheduler.run_scheduler,
+            args=(interval,),
+            daemon=True,
+            name="ArticleSchedulerThread"
+        )
+        _scheduler_thread.start()
+        logger.info(f"✅ スケジューラー起動完了（{interval}分間隔）")
+    except Exception as e:
+        logger.error(f"⚠️ スケジューラー起動エラー: {e}", exc_info=True)
+        logger.warning("→ スケジューラーなしで動作を続行します")
+        scheduler = None
+
+
+@app.on_event("startup")
+async def startup_event():
+    """
+    FastAPIアプリ起動時の処理
+    
+    【最適化】
+    - データベース初期化を startup イベントで実行
+    - 非同期で処理されるため、起動時間が短縮される
+    """
+    global _startup_complete
+    
+    logger.info("🚀 FastAPI起動イベント開始...")
+    
+    # データベース初期化
+    try:
+        init_db()
+        logger.info("✅ データベース初期化完了")
+    except Exception as e:
+        logger.error(f"⚠️ データベース初期化エラー: {e}", exc_info=True)
+        # データベースエラーでもアプリは起動を続行
+    
+    # その他のコンポーネントを初期化
+    initialize_app()
+    
+    _startup_complete = True
+    logger.info("✅ FastAPI起動イベント完了")
+
+
+# アプリ起動時の初期化はstartupイベントで実行
+# initialize_app()  # ← コメントアウト（startupイベントで実行）
 
 # 記事取得のインスタンス
 article_fetcher = ArticleFetcher()
@@ -100,26 +236,24 @@ class PostRequest(BaseModel):
 
 
 class ArticleResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
     id: int
     url: str
     title: str
-    theme: Optional[str]
-    summary: Optional[str]
+    theme: Optional[str] = None
+    summary: Optional[str] = None
     is_posted: bool
-    
-    class Config:
-        from_attributes = True
 
 
 class PostQueueResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
     id: int
     article_id: int
     post_text: str
     status: str
     created_at: datetime
-    
-    class Config:
-        from_attributes = True
 
 
 # APIエンドポイント
@@ -158,7 +292,7 @@ async def analyze_article_endpoint(
     if not article:
         raise HTTPException(status_code=404, detail="記事が見つかりません")
     
-    # Geminiで分析
+    # OpenAIで分析
     analysis = analyzer.analyze_article(article.title, article.content or "", article.url)
     
     # 結果を保存
@@ -271,8 +405,57 @@ async def post_to_social(
 
 @app.get("/healthz")
 async def health_check():
-    """軽量なヘルスチェックエンドポイント（Render用）"""
-    return {"status": "ok"}
+    """
+    ヘルスチェックエンドポイント（Render Health Check用）
+    
+    【仕様】
+    - アプリが起動していれば常に 200 OK を返す
+    - 各コンポーネントの状態も含める（オプション）
+    - Render の Health Check Path に設定: /healthz
+    """
+    return {
+        "status": "ok",
+        "components": {
+            "analyzer": "available" if analyzer else "unavailable",
+            "poster": "available" if poster else "unavailable",
+            "scheduler": "running" if scheduler and _scheduler_thread and _scheduler_thread.is_alive() else "stopped"
+        }
+    }
+
+
+@app.get("/health")
+async def health_check_detailed(db: Session = Depends(get_db)):
+    """
+    詳細ヘルスチェックエンドポイント（監視用）
+    
+    【仕様】
+    - データベース接続状態も確認
+    - 環境変数の設定状態を確認
+    - より詳細な情報を返す
+    """
+    try:
+        # データベース接続テスト
+        db.execute("SELECT 1")
+        db_status = "connected"
+    except Exception as e:
+        logger.error(f"データベース接続エラー: {e}")
+        db_status = "error"
+    
+    return {
+        "status": "ok",
+        "database": db_status,
+        "environment": {
+            "gemini_api_key_set": bool(os.getenv("GEMINI_API_KEY")),
+            "bluesky_handle_set": bool(os.getenv("BLUESKY_HANDLE")),
+            "post_mode": os.getenv("POST_MODE", "demo"),
+            "scheduler_enabled": os.getenv("DISABLE_SCHEDULER", "false") != "true"
+        },
+        "components": {
+            "analyzer": "available" if analyzer else "unavailable",
+            "poster": "available" if poster else "unavailable",
+            "scheduler": "running" if scheduler and _scheduler_thread and _scheduler_thread.is_alive() else "stopped"
+        }
+    }
 
 
 @app.get("/stats")
@@ -363,25 +546,42 @@ async def fetch_by_research(
     request: ThemeResearchRequest,
     db: Session = Depends(get_db)
 ):
-    """Gemini Grounding（Google Search）を使用して記事を取得・分析"""
-    if not researcher:
-        raise HTTPException(status_code=503, detail="GeminiResearcherが初期化されていません")
+    """Geminiを使用してテーマに基づく「未来の兆し」を生成"""
+    if not analyzer:
+        raise HTTPException(status_code=503, detail="GeminiAnalyzerが初期化されていません")
     
     try:
-        # DeepResearchで記事を取得
-        articles = researcher.fetch_articles_by_themes(request.themes)
-    except ValueError as e:
-        # toolsの二重指定などの実装ミスは400エラーとして返す
-        if "tools specified multiple times" in str(e):
-            raise HTTPException(status_code=400, detail=str(e))
-        raise
-    except RuntimeError as e:
-        # toolsが二重に渡される可能性がある場合
-        if "tools would be passed twice" in str(e):
-            raise HTTPException(status_code=400, detail="Invalid request: tools specified multiple times")
+        # テーマに基づいて「未来の兆し」を生成（実際の記事は不要）
+        themes_list = [t.strip() for t in request.themes.split(',') if t.strip()]
+        generated_items = []
+        
+        for theme in themes_list:
+            try:
+                result = analyzer.generate_future_signal(theme)
+                generated_items.append(result)
+            except Exception as e:
+                print(f"⚠️ テーマ '{theme}' の未来の兆し生成エラー: {e}")
+                continue
+        
+        if not generated_items:
+            raise HTTPException(status_code=500, detail="未来の兆しの生成に失敗しました")
+        
+        # 生成された「未来の兆し」を記事として保存
+        articles = []
+        for item in generated_items:
+            articles.append({
+                'title': item['title'],
+                'summary': item['summary'],
+                'future_signal': item['future_signal'],
+                'theme': item['theme'],
+                'url': '',  # 実際の記事URLは不要
+                'content': item['summary'],  # 要約をコンテンツとして使用
+                'published_at': datetime.now()
+            })
+    except HTTPException:
         raise
     except Exception as e:
-        # Gemini APIの503/429/500エラーを適切にハンドリング
+        # Gemini APIのエラーを適切にハンドリング
         error_str = str(e).lower()
         
         # 503エラー（サービス一時利用不可）
@@ -402,121 +602,82 @@ async def fetch_by_research(
                 headers=headers
             )
         
-        # 500エラー（サーバー内部エラー）
-        if "500" in error_str or "internal server error" in error_str:
-            raise HTTPException(
-                status_code=502,  # Bad Gateway（上流のエラー）
-                detail="Upstream service error. Please retry later."
-            )
-        
         # その他のエラーは500として返す
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
     
     try:
         processed_count = 0
-        analyzed_count = 0
-        queued_count = 0
+        posted_count = 0
         
         for article_data in articles:
-            url = article_data['url']
-            title = article_data['title']
-            content = article_data.get('content', '')
+            title = article_data.get('title', '')
+            summary = article_data.get('summary', '')
+            future_signal = article_data.get('future_signal', '')
+            theme = article_data.get('theme', '')
             
-            # 既存チェック
-            existing = get_article_by_url(db, url)
-            if existing:
+            if not title or not summary or not future_signal:
+                print(f"⚠️ 不完全なデータをスキップ: {title}")
                 continue
             
-            # 記事作成
-            article = create_article(
-                db,
-                url,
-                title,
-                content,
-                article_data.get('published_at')
-            )
-            processed_count += 1
+            # 投稿テキストを生成（未来の兆しを含める、URLなし）
+            summary = summary or ""
+            future_signal = future_signal or ""
             
-            # テーマが既に設定されている場合はそのまま使用、なければ分析
-            if article_data.get('theme'):
-                # DeepResearchで既にテーマが設定されている場合
-                analysis = {
-                    "theme": article_data.get('theme'),
-                    "summary": article_data.get('summary', ''),
-                    "key_points": '[]',
-                    "sentiment_score": 0.7,  # Weak Signalなので中立的に高め
-                    "relevance_score": 0.9,  # Weak Signalなので関連性が高い
-                    "should_post": True  # Weak Signalなので投稿候補
-                }
-                update_article_analysis(db, article.id, analysis)
-                analyzed_count += 1
-                
-                # 投稿テキストを生成（未来の兆しを含める）
-                # URLを短縮
-                short_url = url_shortener.shorten(url)
-                future_signal = article_data.get('future_signal', '')
-                summary = article_data.get('summary', '')
-                
-                # 280文字以内に収める（URL含む）
-                # 構造: タイトル → 要約 → URL → 未来の兆し
-                url_length = len(short_url) + 2  # +2は改行分
-                future_label = "🔮 未来の兆し: "
-                future_length = len(future_label) + len(future_signal) + 2  # +2は改行分
-                title_length = len(title) + 2  # +2は改行分
-                
-                # 要約の最大長を計算
-                max_summary_length = 280 - title_length - url_length - future_length - 10  # 余裕を持たせる
-                
-                if max_summary_length < 0:
-                    # 文字数が足りない場合は要約を短縮
-                    max_summary_length = 50
-                
-                if len(summary) > max_summary_length:
+            # 280文字以内に収める（URLなし）
+            # 構造: タイトル → 要約 → 未来の兆し
+            future_label = "🔮 未来の兆し: "
+            future_length = len(future_label) + len(future_signal or "") + 2  # +2は改行分
+            title_length = len(title) + 2  # +2は改行分
+            
+            # 要約の最大長を計算
+            max_summary_length = 280 - title_length - future_length - 10  # 余裕を持たせる
+            
+            if max_summary_length < 0:
+                # 文字数が足りない場合は要約を短縮
+                max_summary_length = 50
+            
+            if len(summary) > max_summary_length:
+                summary = summary[:max_summary_length - 3] + "..."
+            
+            # 投稿テキストを構築（URLなし）
+            post_text = f"{title}\n\n{summary}\n\n{future_label}{future_signal}"
+            
+            # 最終チェック（280文字以内）
+            if len(post_text) > 280:
+                # 未来の兆しを短縮
+                base_length = len(f"{title}\n\n{summary}\n\n{future_label}")
+                remaining_length = 280 - base_length
+                if remaining_length > 0:
+                    future_signal = future_signal[:remaining_length - 3] + "..."
+                    post_text = f"{title}\n\n{summary}\n\n{future_label}{future_signal}"
+                else:
+                    # それでも長い場合は要約をさらに短縮
+                    max_summary_length = 280 - title_length - len(future_label) - 20
                     summary = summary[:max_summary_length - 3] + "..."
-                
-                # 投稿テキストを構築
-                post_text = f"{title}\n\n{summary}\n\n{short_url}\n\n{future_label}{future_signal}"
-                
-                # 最終チェック（280文字以内）
-                if len(post_text) > 280:
-                    # 未来の兆しを短縮
-                    remaining_length = 280 - len(f"{title}\n\n{summary}\n\n{short_url}\n\n{future_label}")
-                    if remaining_length > 0:
-                        future_signal = future_signal[:remaining_length - 3] + "..."
-                        post_text = f"{title}\n\n{summary}\n\n{short_url}\n\n{future_label}{future_signal}"
-                    else:
-                        # それでも長い場合は要約をさらに短縮
-                        max_summary_length = 280 - title_length - url_length - len(future_label) - 20
-                        summary = summary[:max_summary_length - 3] + "..."
-                        post_text = f"{title}\n\n{summary}\n\n{short_url}\n\n{future_label}{future_signal[:50]}"
-                
-                add_to_post_queue(db, article.id, post_text)
-                queued_count += 1
-            else:
-                # テーマが設定されていない場合は分析を実行
+                    post_text = f"{title}\n\n{summary}\n\n{future_label}{future_signal[:50]}"
+            
+            # DB保存せずに直接自動投稿（認証不要）
+            if poster:
                 try:
-                    analysis = analyzer.analyze_article(title, content, url)
-                    update_article_analysis(db, article.id, analysis)
-                    analyzed_count += 1
-                    
-                    # 投稿候補の場合、キューに追加
-                    if analysis.get("should_post", False):
-                        # URLを短縮
-                        short_url = url_shortener.shorten(url)
-                        tweet_text = analyzer.generate_tweet_text(
-                            title, analysis.get("summary"), analysis.get("theme"), short_url
-                        )
-                        add_to_post_queue(db, article.id, tweet_text)
-                        queued_count += 1
+                    result = poster.post(post_text)
+                    if result:
+                        print(f"✅ 自動投稿完了: {title[:50]}... (Platform: {result.get('platform')})")
+                        posted_count += 1
+                    else:
+                        print(f"⚠️ 投稿失敗: {title[:50]}...")
                 except Exception as e:
-                    print(f"分析エラー: {e}")
-                    continue
+                    print(f"⚠️ 自動投稿エラー ({title[:50]}...): {e}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print(f"⚠️ ソーシャルポスターが利用できません。スキップします。")
+            
+            processed_count += 1
         
         return {
-            "message": "DeepResearch取得・分析完了",
+            "message": "未来の兆し生成・投稿完了",
             "processed": processed_count,
-            "analyzed": analyzed_count,
-            "queued": queued_count
+            "posted": posted_count
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"エラー: {str(e)}")
@@ -591,7 +752,5 @@ async def fetch_and_analyze(
 
 if __name__ == "__main__":
     import uvicorn
-    import os
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="127.0.0.1", port=8000)
 

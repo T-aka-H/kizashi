@@ -1,19 +1,31 @@
 """
 データベース操作
+
+【Render デプロイ対応】
+- 環境変数 DATABASE_URL から接続情報を取得
+- ローカル開発: SQLite (weak_signals.db)
+- Render本番: PostgreSQL (DATABASE_URL が自動設定される)
+- postgres:// → postgresql:// の自動変換対応
 """
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 from models import Base, Article, PostQueue
 
-# データベースURL（環境変数から取得、デフォルトはSQLite）
+# データベースURL（環境変数から取得）
+# - ローカル開発: デフォルトで SQLite を使用
+# - Render: DATABASE_URL が自動的に設定される（PostgreSQL）
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./weak_signals.db")
 
-# PostgreSQL用のURL変換（Renderなどで提供される形式に対応）
+# PostgreSQL用のURL変換（Renderが提供するpostgres://をpostgresql://に変換）
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    logger.info("✅ DATABASE_URL を PostgreSQL 形式に変換しました")
 
 # SQLite用の設定
 if DATABASE_URL.startswith("sqlite"):
@@ -35,9 +47,24 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 def init_db():
-    """データベース初期化"""
-    Base.metadata.create_all(bind=engine)
-    print("✅ データベース初期化完了")
+    """
+    データベース初期化
+    
+    【動作】
+    - テーブルが存在しない場合は自動作成
+    - Render では PostgreSQL に自動接続
+    - ローカルでは SQLite ファイルを作成
+    """
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("✅ データベース初期化完了")
+        
+        # 接続情報をログ出力（セキュリティのため URL は出力しない）
+        db_type = "PostgreSQL" if "postgresql://" in DATABASE_URL else "SQLite"
+        logger.info(f"📊 データベースタイプ: {db_type}")
+    except Exception as e:
+        logger.error(f"⚠️ データベース初期化エラー: {e}", exc_info=True)
+        raise
 
 
 def get_db():

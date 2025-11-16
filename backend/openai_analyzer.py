@@ -1,28 +1,26 @@
 """
-Gemini APIを使用した記事分析
+OpenAI APIを使用した記事分析（gpt-4o-mini使用）
 """
 import os
 import json
-import re
-import google.generativeai as genai
+from openai import OpenAI
 from typing import Dict, Optional
 
-# Gemini API設定（環境変数から取得）
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise ValueError(
-        "GEMINI_API_KEY環境変数が設定されていません。"
-        "Render の Environment Variables で設定してください。"
-    )
+# OpenAI API設定
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY環境変数が設定されていません")
 
-genai.configure(api_key=GEMINI_API_KEY)
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 
-class GeminiAnalyzer:
-    """Gemini APIを使用した記事分析クラス"""
+class OpenAIAnalyzer:
+    """OpenAI APIを使用した記事分析クラス（gpt-4o-mini使用）"""
     
-    def __init__(self, model_name: str = "gemini-2.5-flash"):
-        self.model = genai.GenerativeModel(model_name)
+    def __init__(self, model_name: str = "gpt-4o-mini"):
+        self.model_name = model_name
+        self.model = model_name  # 互換性のため
+        self.client = client
     
     def analyze_article(self, title: str, content: str, url: str = None) -> Dict:
         """
@@ -58,8 +56,17 @@ class GeminiAnalyzer:
 """
         
         try:
-            response = self.model.generate_content(prompt)
-            response_text = response.text.strip()
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": "あなたは記事分析の専門家です。JSON形式で正確に分析結果を返してください。"},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.3
+            )
+            
+            response_text = response.choices[0].message.content.strip()
             
             # JSONを抽出（```json```で囲まれている場合がある）
             if "```json" in response_text:
@@ -130,8 +137,17 @@ URL: {url or "なし"}
 """
         
         try:
-            response = self.model.generate_content(prompt)
-            tweet_text = response.text.strip()
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": "あなたはソーシャルメディア投稿文の作成の専門家です。280文字以内で魅力的な投稿文を作成してください。"},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=300
+            )
+            
+            tweet_text = response.choices[0].message.content.strip()
             
             # URLが含まれていない場合、追加（未来の兆しの前）
             if url and url not in tweet_text:
@@ -176,7 +192,6 @@ URL: {url or "なし"}
                     tweet_text = f"{tweet_text_without_url}\n\n{url_part}" if url_part else tweet_text_without_url
             
             return tweet_text
-            
         except Exception as e:
             print(f"⚠️ ツイート生成エラー: {e}")
             # フォールバック（URLを必ず含める、280文字以内）
@@ -193,75 +208,94 @@ URL: {url or "なし"}
                     fallback = fallback[:277] + "..."
             return fallback
     
-    def generate_future_signal(self, theme: str) -> Dict[str, str]:
+    def summarize_ja(self, title: str, content: str, url: str) -> dict:
         """
-        テーマに基づいて「未来の兆し」を生成（実際の記事は不要）
+        記事を日本語で要約し、'未来の兆し'も日本語で1行抽出する。
         
         Args:
-            theme: テーマ（例: "AI", "生成AI", "AIエージェント"）
+            title: 記事タイトル
+            content: 記事本文
+            url: 記事URL
         
         Returns:
-            {"title": "タイトル", "summary": "要約", "future_signal": "未来の兆し", "theme": "テーマ"}
+            {"summary_ja": "...", "future_ja": "..."}
         """
-        prompt = f"""あなたは未来洞察の専門家です。以下のテーマに基づいて、「未来の兆し（Weak Signal）」を生成してください。
+        sys = "あなたは日本語の編集者です。出力は必ず日本語。絵文字は🔮のみ許可。"
+        
+        user = f"""以下の記事を短く日本語で要約し、最後に1行で「未来の兆し」を書いてください。
 
-テーマ: {theme}
+- どちらも短文。合計で後段の280文字制約に収まりやすいよう簡潔に。
+- 専門用語は過度に難しくしない。
+- URLやハンドル名は出力に含めない。
 
-要件:
-- すべて日本語で記述
-- 実際の記事に基づく必要はなく、テーマから推論した未来の兆しを生成
-- 誰にでも予測できる明白な内容ではなく、注意深く考察しなければ見落としてしまうような、ユニークかつ微かな「Weak Signal」を提示
-- 一見無関係に見える事象が、実は未来の兆候を示している、といった『発見』や『仮説』を意識
+[タイトル]
+{title or ''}
 
-以下のJSON形式で出力してください（余計な説明やマークダウンは不要、JSONのみ）:
-{{
-    "title": "このテーマに関連する未来の兆しを示す短いタイトル（30文字以内）",
-    "summary": "この未来の兆しについての簡潔な説明（100-150文字）",
-    "future_signal": "このテーマから読み取れる未来の兆し・示唆・発見（150字以内）"
-}}"""
+[本文(先頭抜粋)]
+{(content or '')[:2000]}
+"""
+        
+        # Chat Completions/Responses どちらでもOKなよう既存の呼び出しに揃える
+        try:
+            resp = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": sys},
+                    {"role": "user", "content": user},
+                ],
+                # search-preview系に温度NGなことがあるので一切渡さない
+                max_tokens=500,
+            )
+            text = resp.choices[0].message.content.strip()
+        except Exception as e:
+            # 失敗しても英語のままにしない。最小限の整形で返す
+            print(f"⚠️ 日本語要約生成エラー: {e}")
+            text = "（要約）" + (title or "").strip()
+        
+        # 非構造→構造化
+        # 形式: 先に要約、改行、"未来の兆し: ..."
+        lines = [x.strip() for x in text.splitlines() if x.strip()]
+        future = ""
+        summary = ""
+        
+        for ln in lines:
+            if "未来の兆し" in ln or "未来" in ln:
+                future = ln.replace("未来の兆し", "").replace("未来", "").lstrip(":：").strip()
+            else:
+                # 最初の1行を要約として採用
+                if not summary:
+                    summary = ln
+        
+        if not future:
+            # ない場合は要約から1フレーズ抽出
+            future = "小さな変化が将来の方向を示唆"
+        
+        return {"summary_ja": summary, "future_ja": future}
+    
+    def translate_ja(self, text: str) -> str:
+        """
+        任意の短文を日本語化（保険）。空なら空を返す。
+        
+        Args:
+            text: 翻訳するテキスト
+        
+        Returns:
+            日本語化されたテキスト
+        """
+        if not text:
+            return ""
         
         try:
-            # JSON出力を強制
-            response = self.model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
-                    response_mime_type="application/json"
-                )
+            resp = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "必ず自然な日本語に翻訳してください。出力は日本語のみ。"},
+                    {"role": "user", "content": text},
+                ],
+                max_tokens=200,
             )
-            
-            # JSONを直接パース
-            response_text = response.text.strip()
-            
-            # ```json```で囲まれている場合の処理
-            if "```json" in response_text:
-                response_text = response_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in response_text:
-                response_text = response_text.split("```")[1].split("```")[0].strip()
-            
-            result = json.loads(response_text)
-            
-            # 必須フィールドの検証
-            title = result.get("title", "").strip()
-            summary = result.get("summary", "").strip()
-            future_signal = result.get("future_signal", "").strip()
-            
-            # 空の場合は例外を発生
-            if not title or not summary or not future_signal:
-                raise ValueError(f"不完全なJSONレスポンス: title={bool(title)}, summary={bool(summary)}, future_signal={bool(future_signal)}")
-            
-            return {
-                "title": title,
-                "summary": summary,
-                "future_signal": future_signal,
-                "theme": theme
-            }
-            
-        except json.JSONDecodeError as e:
-            print(f"⚠️ JSON解析エラー: {e}")
-            print(f"レスポンステキスト: {response_text if 'response_text' in locals() else 'N/A'}")
-            raise ValueError(f"JSON解析に失敗しました: {e}")
+            return resp.choices[0].message.content.strip()
         except Exception as e:
-            print(f"⚠️ 未来の兆し生成エラー: {e}")
-            # エラー時は例外を再発生させて呼び出し側で処理をスキップ
-            raise
+            print(f"⚠️ 日本語翻訳エラー: {e}")
+            return text  # 失敗時は原文を返す（壊さない）
 

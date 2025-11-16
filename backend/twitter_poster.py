@@ -1,13 +1,20 @@
 """
 ソーシャルメディア投稿クラス（Bluesky対応）
+
+【Render デプロイ対応】
+- 環境変数から投稿モードとBluesky認証情報を取得
+- POST_MODE=demo でテスト実行可能（デフォルト）
+- POST_MODE=bluesky で実際に投稿
 """
 import os
-from typing import Optional, Dict
+import re
+from typing import Optional, Dict, List
+from urllib.parse import urlparse
 
-# 投稿モード設定
+# 投稿モード設定（環境変数から取得、デフォルトはdemo）
 POST_MODE = os.getenv("POST_MODE", "demo").lower()  # bluesky, demo
 
-# Bluesky設定
+# Bluesky設定（環境変数から取得）
 BLUESKY_HANDLE = os.getenv("BLUESKY_HANDLE")
 BLUESKY_PASSWORD = os.getenv("BLUESKY_PASSWORD")  # アプリパスワード
 
@@ -76,23 +83,97 @@ class SocialPoster:
         else:
             return self._post_demo(text)
     
+    def _extract_urls(self, text: str) -> List[Dict]:
+        """
+        テキストからURLを抽出して、バイト位置とURL情報を返す
+        
+        Args:
+            text: 投稿テキスト
+            
+        Returns:
+            URL情報のリスト（byteStart, byteEnd, urlを含む）
+        """
+        urls = []
+        # URLパターン（http://, https://で始まるURL）
+        url_pattern = r'https?://[^\s]+'
+        
+        # テキストをUTF-8バイト列に変換
+        text_bytes = text.encode('utf-8')
+        
+        for match in re.finditer(url_pattern, text):
+            url = match.group(0)
+            # URLの開始位置（バイト単位）
+            byte_start = len(text[:match.start()].encode('utf-8'))
+            # URLの終了位置（バイト単位）
+            byte_end = byte_start + len(url.encode('utf-8'))
+            
+            urls.append({
+                'url': url,
+                'byteStart': byte_start,
+                'byteEnd': byte_end
+            })
+        
+        return urls
+    
+    def _create_facets(self, text: str) -> Optional[List[Dict]]:
+        """
+        テキストからfacetsを作成（URLをハイパーリンク化）
+        
+        Args:
+            text: 投稿テキスト
+            
+        Returns:
+            facetsのリストまたはNone
+        """
+        urls = self._extract_urls(text)
+        
+        if not urls:
+            return None
+        
+        facets = []
+        for url_info in urls:
+            facets.append({
+                'index': {
+                    'byteStart': url_info['byteStart'],
+                    'byteEnd': url_info['byteEnd']
+                },
+                'features': [
+                    {
+                        '$type': 'app.bsky.richtext.facet#link',
+                        'uri': url_info['url']
+                    }
+                ]
+            })
+        
+        return facets
+    
     def _post_bluesky(self, text: str) -> Optional[Dict]:
-        """Blueskyに投稿"""
+        """Blueskyに投稿（URLをハイパーリンク化）"""
         try:
             from atproto import Client, models
             
+            # facetsを作成（URLをハイパーリンク化）
+            facets = self._create_facets(text)
+            
             # 投稿を作成
-            response = self.client.send_post(text=text)
+            if facets:
+                # facetsを含めて投稿
+                response = self.client.send_post(text=text, facets=facets)
+                print(f"✅ Bluesky投稿成功（{len(facets)}個のリンクを含む）")
+            else:
+                # facetsなしで投稿
+                response = self.client.send_post(text=text)
+                print(f"✅ Bluesky投稿成功")
             
             # URIからpost_idを抽出
             post_id = response.uri.split("/")[-1] if hasattr(response, 'uri') else str(response.cid)
             
-            print(f"✅ Bluesky投稿成功: ID={post_id}")
             return {
                 "success": True,
                 "post_id": post_id,
                 "text": text,
-                "platform": "bluesky"
+                "platform": "bluesky",
+                "facets_count": len(facets) if facets else 0
             }
         except Exception as e:
             print(f"⚠️ Bluesky投稿エラー: {e}")

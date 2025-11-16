@@ -1,0 +1,6 @@
+# 本番環境用の依存パッケージ（PostgreSQL使用時）
+# ローカル開発では requirements.txt を使用してください
+
+-r requirements.txt
+psycopg2-binary==2.9.9
+
