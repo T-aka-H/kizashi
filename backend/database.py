@@ -12,6 +12,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 import os
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -125,4 +126,51 @@ def add_to_post_queue(db: Session, article_id: int, post_text: str):
 def get_pending_posts(db: Session):
     """承認待ちの投稿を取得"""
     return db.query(PostQueue).filter(PostQueue.status == "pending").all()
+
+
+def get_recently_posted_urls(db: Session, hours: int = 3):
+    """
+    過去N時間以内に投稿した記事のURLリストを取得
+    
+    Args:
+        db: データベースセッション
+        hours: 何時間以内の記事を取得するか（デフォルト: 3時間）
+    
+    Returns:
+        過去N時間以内に投稿した記事のURLのセット
+    """
+    from datetime import timedelta
+    cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+    
+    recent_articles = db.query(Article).filter(
+        Article.is_posted == True,
+        Article.posted_at >= cutoff_time
+    ).all()
+    
+    return {article.url for article in recent_articles}
+
+
+def mark_article_as_posted(db: Session, url: str):
+    """
+    記事を投稿済みとしてマーク
+    
+    Args:
+        db: データベースセッション
+        url: 記事のURL
+    """
+    article = db.query(Article).filter(Article.url == url).first()
+    if article:
+        article.is_posted = True
+        article.posted_at = datetime.utcnow()
+        db.commit()
+    else:
+        # 記事が存在しない場合は新規作成
+        article = Article(
+            url=url,
+            title="",  # タイトルは後で更新可能
+            is_posted=True,
+            posted_at=datetime.utcnow()
+        )
+        db.add(article)
+        db.commit()
 

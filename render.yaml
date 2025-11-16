@@ -32,7 +32,7 @@ services:
     region: oregon
     plan: starter
     buildCommand: cd frontend && npm install && npm run build
-    startCommand: cd frontend && npm start
+    startCommand: cd frontend && npm start -- -p $PORT
     envVars:
       - key: NODE_VERSION
         value: 20.x

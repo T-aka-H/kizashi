@@ -10,6 +10,7 @@ from article_fetcher import ArticleFetcher
 from gemini_analyzer import GeminiAnalyzer
 from twitter_poster import SocialPoster
 from url_shortener import URLShortener
+from database import SessionLocal, get_recently_posted_urls, mark_article_as_posted
 
 
 class WiredBlueskyBotAdvanced:
@@ -74,7 +75,7 @@ class WiredBlueskyBotAdvanced:
     
     def select_top5_with_gemini(self, articles: List[Dict]) -> List[Dict]:
         """
-        GeminiにTOP5を選定してもらう
+        GeminiにTOP5を選定してもらう（過去3時間以内に投稿した記事を除外）
         
         Args:
             articles: 記事のリスト
@@ -85,7 +86,20 @@ class WiredBlueskyBotAdvanced:
         if not articles:
             return []
         
-        print(f"\n🤖 Geminiで重要度TOP5を選定中...")
+        # 過去3時間以内に投稿した記事を除外
+        db = SessionLocal()
+        try:
+            recent_urls = get_recently_posted_urls(db, hours=3)
+            if recent_urls:
+                print(f"\n⏰ 過去3時間以内に投稿した記事を除外: {len(recent_urls)}件")
+                articles = [a for a in articles if a.get('url') not in recent_urls]
+                if not articles:
+                    print("⚠️ すべての記事が過去3時間以内に投稿済みです")
+                    return []
+        finally:
+            db.close()
+        
+        print(f"\n🤖 Geminiで重要度TOP5を選定中... (候補: {len(articles)}件)")
         
         # 記事リストを整形
         articles_text = ""
@@ -521,33 +535,54 @@ class WiredBlueskyBotAdvanced:
         print(f"⏳ 次の投稿まで5秒待機...")
         time.sleep(5)
         
-        # 2. 各記事の詳細要約投稿（1位から5位まで）
-        for i, article in enumerate(top5_articles, 1):
-            rank = article.get('rank', i)
-            title = article.get('title', '無題')
+        # データベースセッションを準備（投稿記録用）
+        db = SessionLocal()
+        posted_urls = []  # 投稿成功した記事のURLを記録
+        
+        try:
+            # 2. 各記事の詳細要約投稿（1位から5位まで）
+            for i, article in enumerate(top5_articles, 1):
+                rank = article.get('rank', i)
+                title = article.get('title', '無題')
+                url = article.get('url', '')
+                
+                print(f"\n[{i}/5] 詳細要約投稿準備中: {title[:50]}...")
+                
+                # 投稿テキストを作成（250文字の要約）
+                post_text = self.create_detail_post(article, rank)
+                
+                print(f"投稿内容:\n{'-'*60}\n{post_text}\n{'-'*60}")
+                print(f"文字数: {len(post_text)}/280")
+                
+                # 投稿
+                result = self.poster.post(post_text)
+                
+                if result and result.get('success'):
+                    print(f"✅ TOP{rank} 詳細要約投稿成功!")
+                    success_count += 1
+                    # 投稿成功した記事のURLを記録
+                    if url:
+                        posted_urls.append(url)
+                else:
+                    print(f"⚠️ TOP{rank} 詳細要約投稿失敗")
+                    failed_count += 1
+                
+                # 連続投稿の間隔を空ける（スパム判定回避）
+                if i < len(top5_articles):
+                    print(f"⏳ 次の投稿まで5秒待機...")
+                    time.sleep(5)
             
-            print(f"\n[{i}/5] 詳細要約投稿準備中: {title[:50]}...")
-            
-            # 投稿テキストを作成（250文字の要約）
-            post_text = self.create_detail_post(article, rank)
-            
-            print(f"投稿内容:\n{'-'*60}\n{post_text}\n{'-'*60}")
-            print(f"文字数: {len(post_text)}/280")
-            
-            # 投稿
-            result = self.poster.post(post_text)
-            
-            if result and result.get('success'):
-                print(f"✅ TOP{rank} 詳細要約投稿成功!")
-                success_count += 1
-            else:
-                print(f"⚠️ TOP{rank} 詳細要約投稿失敗")
-                failed_count += 1
-            
-            # 連続投稿の間隔を空ける（スパム判定回避）
-            if i < len(top5_articles):
-                print(f"⏳ 次の投稿まで5秒待機...")
-                time.sleep(5)
+            # 投稿成功した記事をデータベースに記録
+            if posted_urls:
+                print(f"\n💾 投稿履歴をデータベースに記録中...")
+                for url in posted_urls:
+                    try:
+                        mark_article_as_posted(db, url)
+                    except Exception as e:
+                        print(f"⚠️ 投稿履歴の記録エラー ({url[:50]}...): {e}")
+                print(f"✅ {len(posted_urls)}件の投稿履歴を記録しました")
+        finally:
+            db.close()
         
         print(f"\n{'='*60}")
         print(f"📊 投稿結果: 成功 {success_count}件 / 失敗 {failed_count}件")
