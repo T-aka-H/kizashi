@@ -177,8 +177,19 @@ class WiredBlueskyBot:
         Returns:
             投稿テキスト（280文字以内）
         """
-        today = datetime.now().strftime("%m/%d")
-        header = f"📰 WIRED TOP5 ({today})"
+        now = datetime.now()
+        date_str = now.strftime("%m/%d")
+        hour = now.hour
+        # 12時間制に変換（先頭の0を削除）
+        if hour == 0:
+            time_str = "12AM"
+        elif hour < 12:
+            time_str = f"{hour}AM"
+        elif hour == 12:
+            time_str = "12PM"
+        else:
+            time_str = f"{hour-12}PM"
+        header = f"📰 WIRED TOP5 ({date_str} {time_str})"
         
         lines = [header]
         

@@ -148,7 +148,7 @@ def _start_wired_scheduler_delayed():
     
     【Render前提】
     - PCを起動していないときでも投稿できるように、RenderのWeb Service内で実行
-    - 毎朝8時にWIRED記事TOP5を自動投稿
+    - 1時間に1回WIRED記事TOP5を自動投稿
     """
     time.sleep(30)  # 30秒待機（起動時間短縮のため）
     
@@ -177,9 +177,9 @@ def _start_wired_scheduler_delayed():
             except Exception as e:
                 logger.error(f"⚠️ WIRED Bot実行エラー: {e}", exc_info=True)
         
-        # 毎朝8時に実行
-        schedule.every().day.at("08:00").do(wired_job)
-        logger.info(f"✅ WIRED Botスケジューラー起動完了（毎朝8:00、{bot_name}）")
+        # 1時間に1回実行
+        schedule.every().hour.do(wired_job)
+        logger.info(f"✅ WIRED Botスケジューラー起動完了（1時間に1回、{bot_name}）")
         
         # スケジューラーをバックグラウンドで実行
         def run_scheduler():
