@@ -197,6 +197,188 @@ class WiredBlueskyBotAdvanced:
                 'key_point': ''
             }
     
+    def create_top5_summary_post(self, top5_articles: List[Dict]) -> str:
+        """
+        TOP5の一覧投稿を作成（題名と短縮リンクのみ）
+        
+        Args:
+            top5_articles: TOP5の記事リスト
+        
+        Returns:
+            投稿テキスト（280文字以内）
+        """
+        today = datetime.now().strftime("%m/%d")
+        header = f"📰 WIRED TOP5 ({today})"
+        
+        lines = [header]
+        
+        for i, article in enumerate(top5_articles, 1):
+            title = article.get('title', '無題')
+            url = article.get('url', '')
+            
+            # URL短縮
+            short_url = ""
+            if url:
+                try:
+                    short_url = self.url_shortener.shorten(url)
+                    if not short_url:
+                        short_url = url
+                except Exception as e:
+                    print(f"⚠️ URL短縮エラー: {e}")
+                    short_url = url
+            
+            # 1位: 題名 + 短縮リンク
+            if short_url:
+                lines.append(f"{i}位: {title}\n{short_url}")
+            else:
+                lines.append(f"{i}位: {title}")
+        
+        post_text = "\n\n".join(lines)
+        
+        # 280文字制限チェック
+        if len(post_text) > 280:
+            # タイトルを短縮
+            post_text = header + "\n\n"
+            for i, article in enumerate(top5_articles, 1):
+                title = article.get('title', '無題')
+                url = article.get('url', '')
+                
+                short_url = ""
+                if url:
+                    try:
+                        short_url = self.url_shortener.shorten(url) or url
+                    except:
+                        short_url = url
+                
+                # 残り文字数を計算
+                remaining = 280 - len(post_text) - 10  # 余裕を持たせる
+                if remaining < 20:
+                    break
+                
+                # タイトルを短縮
+                max_title_length = remaining - len(short_url) - 10 if short_url else remaining - 5
+                if len(title) > max_title_length:
+                    title = title[:max_title_length - 3] + "..."
+                
+                if short_url:
+                    post_text += f"{i}位: {title}\n{short_url}\n\n"
+                else:
+                    post_text += f"{i}位: {title}\n\n"
+            
+            # 最終チェック
+            if len(post_text) > 280:
+                post_text = post_text[:277] + "..."
+        
+        return post_text.strip()
+    
+    def create_detail_post(self, article: Dict, rank: int) -> str:
+        """
+        各記事の詳細要約投稿を作成（250文字の要約）
+        
+        Args:
+            article: 記事の辞書（要約付き）
+            rank: ランキング順位
+        
+        Returns:
+            投稿テキスト（280文字以内、要約は250文字）
+        """
+        title = article.get('title', '無題')
+        summary = article.get('summary', '')
+        url = article.get('url', '')
+        
+        # ヘッダー
+        today = datetime.now().strftime("%m/%d")
+        header = f"📰 WIRED TOP{rank} ({today})"
+        
+        # URL短縮
+        short_url = ""
+        if url:
+            try:
+                short_url = self.url_shortener.shorten(url)
+                if not short_url:
+                    short_url = url
+            except Exception as e:
+                print(f"⚠️ URL短縮エラー: {e}")
+                short_url = url
+        
+        # タイトル + 改行2つ
+        title_section = f"【{title}】"
+        
+        # URL + 改行2つ
+        url_section = short_url if short_url else ""
+        
+        # 要約は250文字を目標（ヘッダー、タイトル、URLを考慮して調整）
+        # ベース長: ヘッダー + タイトル + URL + 改行
+        base_length = len(header) + 2 + len(title_section) + 2
+        if url_section:
+            base_length += len(url_section) + 2
+        
+        # 残り文字数で要約を決定（250文字を目標、ただし残り文字数が少ない場合は調整）
+        remaining = 280 - base_length
+        target_summary_length = min(250, remaining - 2)  # 改行2つ分を考慮
+        
+        if target_summary_length > 0:
+            if len(summary) > target_summary_length:
+                summary_text = summary[:target_summary_length - 3] + "..."
+            else:
+                summary_text = summary
+        else:
+            # スペースが足りない場合はタイトルを短縮
+            title_short = title[:20] + "..." if len(title) > 20 else title
+            title_section = f"【{title_short}】"
+            base_length = len(header) + 2 + len(title_section) + 2
+            if url_section:
+                base_length += len(url_section) + 2
+            remaining = 280 - base_length
+            target_summary_length = min(250, remaining - 2)
+            if target_summary_length > 0:
+                summary_text = summary[:target_summary_length - 3] + "..." if len(summary) > target_summary_length else summary
+            else:
+                summary_text = ""
+        
+        # 投稿テキストを構築
+        parts = [header, title_section]
+        if url_section:
+            parts.append(url_section)
+        if summary_text:
+            parts.append(summary_text)
+        
+        post_text = "\n\n".join(parts)
+        
+        # 最終チェック（280文字厳守）
+        if len(post_text) > 280:
+            # 要約をさらに短縮
+            base_length = len(header) + 2 + len(title_section) + 2
+            if url_section:
+                base_length += len(url_section) + 2
+            remaining = 280 - base_length
+            if remaining > 0:
+                summary_text = summary[:remaining - 3] + "..." if len(summary) > remaining else summary
+                parts = [header, title_section]
+                if url_section:
+                    parts.append(url_section)
+                if summary_text:
+                    parts.append(summary_text)
+                post_text = "\n\n".join(parts)
+            else:
+                # タイトルをさらに短縮
+                title_short = title[:15] + "..." if len(title) > 15 else title
+                parts = [header, f"【{title_short}】"]
+                if url_section:
+                    parts.append(url_section)
+                remaining = 280 - sum(len(p) + 2 for p in parts)
+                if remaining > 0:
+                    summary_text = summary[:remaining - 3] + "..." if len(summary) > remaining else summary
+                    if summary_text:
+                        parts.append(summary_text)
+                post_text = "\n\n".join(parts)
+        
+        # 最終チェック
+        if len(post_text) > 280:
+            post_text = post_text[:277] + "..."
+        
+        return post_text
+    
     def create_post_text_for_article(self, article: Dict, rank: int) -> str:
         """
         1つの記事の投稿用テキストを作成（最適化版）
@@ -314,7 +496,11 @@ class WiredBlueskyBotAdvanced:
     
     def post_articles_to_bluesky(self, top5_articles: List[Dict]) -> Dict[str, int]:
         """
-        TOP5の記事を個別にBlueskyに投稿
+        TOP5の記事を投稿（新しい構造）
+        
+        【投稿構造】
+        1. TOP5の一覧投稿（題名と短縮リンクのみ）
+        2. 各記事の詳細要約投稿（250文字の要約、1位から5位まで）
         
         Args:
             top5_articles: TOP5の記事リスト（要約付き）
@@ -326,17 +512,37 @@ class WiredBlueskyBotAdvanced:
         failed_count = 0
         
         print(f"\n{'='*60}")
-        print(f"📤 TOP5を個別に投稿中...")
+        print(f"📤 TOP5を投稿中（新しい構造）...")
         print(f"{'='*60}")
         
+        # 1. TOP5の一覧投稿
+        print(f"\n[0/6] TOP5一覧投稿を作成中...")
+        summary_post = self.create_top5_summary_post(top5_articles)
+        
+        print(f"投稿内容:\n{'-'*60}\n{summary_post}\n{'-'*60}")
+        print(f"文字数: {len(summary_post)}/280")
+        
+        result = self.poster.post(summary_post)
+        if result and result.get('success'):
+            print(f"✅ TOP5一覧投稿成功!")
+            success_count += 1
+        else:
+            print(f"⚠️ TOP5一覧投稿失敗")
+            failed_count += 1
+        
+        # 投稿間隔
+        print(f"⏳ 次の投稿まで5秒待機...")
+        time.sleep(5)
+        
+        # 2. 各記事の詳細要約投稿（1位から5位まで）
         for i, article in enumerate(top5_articles, 1):
             rank = article.get('rank', i)
             title = article.get('title', '無題')
             
-            print(f"\n[{i}/5] 投稿準備中: {title[:50]}...")
+            print(f"\n[{i}/5] 詳細要約投稿準備中: {title[:50]}...")
             
-            # 投稿テキストを作成
-            post_text = self.create_post_text_for_article(article, rank)
+            # 投稿テキストを作成（250文字の要約）
+            post_text = self.create_detail_post(article, rank)
             
             print(f"投稿内容:\n{'-'*60}\n{post_text}\n{'-'*60}")
             print(f"文字数: {len(post_text)}/280")
@@ -345,10 +551,10 @@ class WiredBlueskyBotAdvanced:
             result = self.poster.post(post_text)
             
             if result and result.get('success'):
-                print(f"✅ TOP{rank} 投稿成功!")
+                print(f"✅ TOP{rank} 詳細要約投稿成功!")
                 success_count += 1
             else:
-                print(f"⚠️ TOP{rank} 投稿失敗")
+                print(f"⚠️ TOP{rank} 詳細要約投稿失敗")
                 failed_count += 1
             
             # 連続投稿の間隔を空ける（スパム判定回避）
@@ -358,6 +564,8 @@ class WiredBlueskyBotAdvanced:
         
         print(f"\n{'='*60}")
         print(f"📊 投稿結果: 成功 {success_count}件 / 失敗 {failed_count}件")
+        print(f"   - 一覧投稿: 1件")
+        print(f"   - 詳細要約投稿: {len(top5_articles)}件")
         print(f"{'='*60}")
         
         return {"success": success_count, "failed": failed_count}
