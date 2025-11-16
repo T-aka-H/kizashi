@@ -6,9 +6,9 @@ import { FileText, Send, Clock, Tag, Search, Loader2, Rss, Play } from 'lucide-r
 
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false) // 初期値をfalseに変更（statsは使用しないため）
   const [error, setError] = useState<string | null>(null)
-  const [statsAvailable, setStatsAvailable] = useState(true) // 統計情報が利用可能かどうか
+  const [statsAvailable, setStatsAvailable] = useState(false) // 統計情報エンドポイントは削除されているため、初期値をfalseに
   const [researchLoading, setResearchLoading] = useState(false)
   const [researchThemes, setResearchThemes] = useState('')
   const [researchResult, setResearchResult] = useState<string | null>(null)
@@ -17,14 +17,15 @@ export default function Dashboard() {
   const [wiredBotLoading, setWiredBotLoading] = useState(false)
   const [wiredBotResult, setWiredBotResult] = useState<string | null>(null)
 
-  useEffect(() => {
-    loadStats()
-    // 統計情報が利用可能な場合のみ30秒ごとに更新
-    if (statsAvailable) {
-      const interval = setInterval(loadStats, 30000)
-      return () => clearInterval(interval)
-    }
-  }, [statsAvailable])
+  // 統計情報エンドポイントは削除されているため、loadStatsを呼び出さない
+  // useEffect(() => {
+  //   loadStats()
+  //   // 統計情報が利用可能な場合のみ30秒ごとに更新
+  //   if (statsAvailable) {
+  //     const interval = setInterval(loadStats, 30000)
+  //     return () => clearInterval(interval)
+  //   }
+  // }, [statsAvailable])
 
   const loadStats = async () => {
     // 統計情報が利用不可の場合はスキップ
@@ -44,8 +45,8 @@ export default function Dashboard() {
         return
       }
       
-      // 404エラーの場合は統計情報エンドポイントが存在しない（削除されている）
-      if (err.response?.status === 404) {
+      // 404エラーまたはCORSエラーの場合は統計情報エンドポイントが存在しない（削除されている）
+      if (err.response?.status === 404 || err.message?.includes('CORS') || err.message?.includes('Failed to fetch')) {
         setStatsAvailable(false)
         setStats(null)
         setError(null) // エラーを表示しない（正常な状態として扱う）
