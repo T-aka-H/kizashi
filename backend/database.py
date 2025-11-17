@@ -150,6 +150,22 @@ def get_recently_posted_urls(db: Session, hours: int = 3):
     return {article.url for article in recent_articles}
 
 
+def get_latest_posted_article(db: Session):
+    """
+    最新の投稿記事を取得
+    
+    Args:
+        db: データベースセッション
+    
+    Returns:
+        最新の投稿記事（Articleオブジェクト）またはNone
+    """
+    from sqlalchemy import desc
+    return db.query(Article).filter(
+        Article.is_posted == True
+    ).order_by(desc(Article.posted_at)).first()
+
+
 def mark_article_as_posted(db: Session, url: str):
     """
     記事を投稿済みとしてマーク

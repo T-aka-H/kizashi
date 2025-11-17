@@ -6,6 +6,7 @@ import os
 import time
 from typing import List, Dict
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from article_fetcher import ArticleFetcher
 from gemini_analyzer import GeminiAnalyzer
 from twitter_poster import SocialPoster
@@ -16,13 +17,28 @@ from database import SessionLocal, get_recently_posted_urls, mark_article_as_pos
 class WiredBlueskyBotAdvanced:
     """WIRED記事をBlueskyに投稿するボット（改良版）"""
     
-    # WIREDのRSSフィード（質重視型）
+    # WIREDのRSSフィード（質重視型、3時間ごとに切り替え）
     WIRED_RSS_FEEDS = [
-        "https://www.wired.com/feed/category/business/rss",  # ビジネス
-        "https://www.wired.com/feed/tag/ai/latest/rss",      # AI
-        "https://www.wired.com/feed/category/ideas/rss",     # オピニオン
-        "https://www.wired.com/feed/category/science/rss",   # サイエンス
+        {
+            "url": "https://www.wired.com/feed/category/business/rss",
+            "name": "ビジネス"
+        },
+        {
+            "url": "https://www.wired.com/feed/tag/ai/latest/rss",
+            "name": "AI"
+        },
+        {
+            "url": "https://www.wired.com/feed/category/ideas/rss",
+            "name": "オピニオン"
+        },
+        {
+            "url": "https://www.wired.com/feed/category/science/rss",
+            "name": "サイエンス"
+        },
     ]
+    
+    # 起動時刻（最初の実行時刻を記録）
+    _start_time = None
     
     def __init__(self):
         """初期化"""
@@ -30,51 +46,59 @@ class WiredBlueskyBotAdvanced:
         self.analyzer = GeminiAnalyzer()
         self.poster = SocialPoster()
         self.url_shortener = URLShortener()
+        
+        # 起動時刻を記録（初回のみ）
+        if WiredBlueskyBotAdvanced._start_time is None:
+            WiredBlueskyBotAdvanced._start_time = datetime.now()
+        
         print("✅ WiredBlueskyBotAdvanced初期化完了")
+    
+    def _get_current_feed_index(self) -> int:
+        """
+        現在時刻に基づいて使用するフィードのインデックスを決定
+        3時間ごとにフィードを切り替える
+        
+        Returns:
+            使用するフィードのインデックス（0-3）
+        """
+        if WiredBlueskyBotAdvanced._start_time is None:
+            return 0
+        
+        # 起動時刻からの経過時間（時間単位）
+        elapsed_hours = (datetime.now() - WiredBlueskyBotAdvanced._start_time).total_seconds() / 3600
+        
+        # 3時間ごとに切り替え（4つのフィードで12時間で1サイクル）
+        feed_index = int(elapsed_hours // 3) % len(self.WIRED_RSS_FEEDS)
+        
+        return feed_index
     
     def fetch_wired_articles(self, max_items: int = 20) -> List[Dict]:
         """
-        WIREDのRSSフィードから記事を取得（複数フィード対応）
+        WIREDのRSSフィードから記事を取得（3時間ごとに分野を切り替え）
         
         Args:
-            max_items: 取得する最大記事数（全体）
+            max_items: 取得する最大記事数
         
         Returns:
             記事のリスト
         """
+        # 現在使用するフィードを決定
+        feed_index = self._get_current_feed_index()
+        selected_feed = self.WIRED_RSS_FEEDS[feed_index]
+        
         print(f"\n📡 WIREDから記事を取得中... (最大{max_items}件)")
-        all_articles = []
+        print(f"📂 選択された分野: {selected_feed['name']}")
+        print(f"🔗 RSSフィード: {selected_feed['url']}")
         
-        # 各フィードから記事を取得
-        items_per_feed = max(5, max_items // len(self.WIRED_RSS_FEEDS))  # フィードごとの取得数
+        # 選択されたフィードから記事を取得
+        articles = self.fetcher.fetch_from_rss(selected_feed['url'], max_items)
         
-        for i, rss_url in enumerate(self.WIRED_RSS_FEEDS, 1):
-            print(f"  [{i}/{len(self.WIRED_RSS_FEEDS)}] {rss_url}")
-            articles = self.fetcher.fetch_from_rss(rss_url, items_per_feed)
-            all_articles.extend(articles)
-            
-            # フィード間の遅延（サーバー負荷軽減）
-            if i < len(self.WIRED_RSS_FEEDS):
-                time.sleep(1)
-        
-        # URLで重複を除去
-        seen_urls = set()
-        unique_articles = []
-        for article in all_articles:
-            url = article.get('url')
-            if url and url not in seen_urls:
-                seen_urls.add(url)
-                unique_articles.append(article)
-        
-        # 最大記事数に制限
-        unique_articles = unique_articles[:max_items]
-        
-        if not unique_articles:
+        if not articles:
             print("⚠️ 記事の取得に失敗しました")
             return []
         
-        print(f"✅ {len(unique_articles)}件の記事を取得しました（重複除去後）")
-        return unique_articles
+        print(f"✅ {len(articles)}件の記事を取得しました")
+        return articles
     
     def fetch_article_content(self, article: Dict) -> Dict:
         """
@@ -418,9 +442,10 @@ class WiredBlueskyBotAdvanced:
         key_point = article.get('key_point', '')
         url = article.get('url', '')
         
-        # ヘッダー（順位付き）
-        today = datetime.now().strftime("%m/%d")
-        header = f"📰 WIRED TOP{rank} ({today})"
+        # ヘッダー（順位付き、日本時間）
+        jst = ZoneInfo('Asia/Tokyo')
+        today_jst = datetime.now(jst).strftime("%m/%d")
+        header = f"📰 WIRED TOP{rank} ({today_jst})"
         
         # URL短縮（利用可能な場合）
         short_url = ""
@@ -612,7 +637,9 @@ class WiredBlueskyBotAdvanced:
         """メイン処理"""
         print(f"\n{'='*60}")
         print(f"🚀 WIRED記事TOP5投稿Bot（改良版）開始")
-        print(f"⏰ 実行時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        jst = ZoneInfo('Asia/Tokyo')
+        now_jst = datetime.now(jst)
+        print(f"⏰ 実行時刻 (JST): {now_jst.strftime('%Y-%m-%d %H:%M:%S %Z')}")
         print(f"{'='*60}")
         
         try:

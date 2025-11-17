@@ -421,6 +421,48 @@ async def health_check_detailed(db: Session = Depends(get_db)):
 # @app.get("/stats", ...) - 削除
 
 
+@app.get("/latest-post")
+async def get_latest_post(db: Session = Depends(get_db)):
+    """
+    最新の投稿時刻を取得
+    
+    Returns:
+        最新の投稿記事情報（投稿時刻はUTCとJSTの両方で表示）
+    """
+    from database import get_latest_posted_article
+    from zoneinfo import ZoneInfo
+    from datetime import timezone
+    
+    latest = get_latest_posted_article(db)
+    
+    if not latest or not latest.posted_at:
+        return {
+            "status": "no_posts",
+            "message": "投稿履歴がありません"
+        }
+    
+    # UTC時刻を日本時間に変換
+    jst = ZoneInfo('Asia/Tokyo')
+    if latest.posted_at.tzinfo is None:
+        # タイムゾーン情報がない場合はUTCとして扱う
+        utc_time = latest.posted_at.replace(tzinfo=timezone.utc)
+    else:
+        utc_time = latest.posted_at.astimezone(timezone.utc)
+    jst_time = utc_time.astimezone(jst)
+    
+    return {
+        "status": "ok",
+        "latest_post": {
+            "id": latest.id,
+            "title": latest.title,
+            "url": latest.url,
+            "posted_at_utc": latest.posted_at.isoformat() if latest.posted_at else None,
+            "posted_at_jst": jst_time.strftime('%Y-%m-%d %H:%M:%S %Z'),
+            "posted_at_jst_iso": jst_time.isoformat()
+        }
+    }
+
+
 @app.post("/fetch/wired-rss")
 async def fetch_wired_rss(
     request: RSSFeedRequest,
