@@ -16,8 +16,13 @@ from database import SessionLocal, get_recently_posted_urls, mark_article_as_pos
 class WiredBlueskyBotAdvanced:
     """WIRED記事をBlueskyに投稿するボット（改良版）"""
     
-    # WIREDのRSSフィード
-    WIRED_RSS_URL = "https://www.wired.com/feed/rss"
+    # WIREDのRSSフィード（質重視型）
+    WIRED_RSS_FEEDS = [
+        "https://www.wired.com/feed/category/business/rss",  # ビジネス
+        "https://www.wired.com/feed/tag/ai/latest/rss",      # AI
+        "https://www.wired.com/feed/category/ideas/rss",     # オピニオン
+        "https://www.wired.com/feed/category/science/rss",   # サイエンス
+    ]
     
     def __init__(self):
         """初期化"""
@@ -29,23 +34,47 @@ class WiredBlueskyBotAdvanced:
     
     def fetch_wired_articles(self, max_items: int = 20) -> List[Dict]:
         """
-        WIREDのRSSフィードから記事を取得
+        WIREDのRSSフィードから記事を取得（複数フィード対応）
         
         Args:
-            max_items: 取得する最大記事数
+            max_items: 取得する最大記事数（全体）
         
         Returns:
             記事のリスト
         """
         print(f"\n📡 WIREDから記事を取得中... (最大{max_items}件)")
-        articles = self.fetcher.fetch_from_rss(self.WIRED_RSS_URL, max_items)
+        all_articles = []
         
-        if not articles:
+        # 各フィードから記事を取得
+        items_per_feed = max(5, max_items // len(self.WIRED_RSS_FEEDS))  # フィードごとの取得数
+        
+        for i, rss_url in enumerate(self.WIRED_RSS_FEEDS, 1):
+            print(f"  [{i}/{len(self.WIRED_RSS_FEEDS)}] {rss_url}")
+            articles = self.fetcher.fetch_from_rss(rss_url, items_per_feed)
+            all_articles.extend(articles)
+            
+            # フィード間の遅延（サーバー負荷軽減）
+            if i < len(self.WIRED_RSS_FEEDS):
+                time.sleep(1)
+        
+        # URLで重複を除去
+        seen_urls = set()
+        unique_articles = []
+        for article in all_articles:
+            url = article.get('url')
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                unique_articles.append(article)
+        
+        # 最大記事数に制限
+        unique_articles = unique_articles[:max_items]
+        
+        if not unique_articles:
             print("⚠️ 記事の取得に失敗しました")
             return []
         
-        print(f"✅ {len(articles)}件の記事を取得しました")
-        return articles
+        print(f"✅ {len(unique_articles)}件の記事を取得しました（重複除去後）")
+        return unique_articles
     
     def fetch_article_content(self, article: Dict) -> Dict:
         """

@@ -1,5 +1,5 @@
 """
-WIRED記事TOP5を1時間に1回Blueskyに投稿するスケジューラー
+WIRED記事TOP5を3時間に1回Blueskyに投稿するスケジューラー
 """
 import os
 import schedule
@@ -47,12 +47,12 @@ def main():
     """メイン処理"""
     print(f"\n{'='*70}")
     print(f"🚀 WIRED記事TOP5投稿スケジューラー 起動")
-    print(f"⏰ 実行スケジュール: 1時間に1回")
+    print(f"⏰ 実行スケジュール: 3時間に1回")
     print(f"🤖 使用ボット: {BOT_NAME}")
     print(f"{'='*70}\n")
     
-    # 1時間に1回実行
-    schedule.every().hour.do(job)
+    # 3時間に1回実行
+    schedule.every(3).hours.do(job)
     
     print("📅 次回実行予定:")
     for job_item in schedule.jobs:
