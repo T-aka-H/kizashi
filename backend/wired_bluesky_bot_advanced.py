@@ -252,15 +252,28 @@ class WiredBlueskyBotAdvanced:
                 response_text = response_text.split("```")[1].split("```")[0].strip()
             
             result = json.loads(response_text)
+            summary = result.get('summary', '')
+            key_point = result.get('key_point', '')
+            
+            # 要約が英語のままの場合（日本語が含まれていない場合）のチェック
+            import re
+            has_japanese = bool(re.search(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]', summary))
+            if not has_japanese and summary:
+                print(f"⚠️ 要約が日本語でない可能性があります。再生成を試みます...")
+                # 英語の要約の場合は、短い説明文に置き換える
+                summary = '記事の詳細はリンクからご確認ください。'
+            
             return {
-                'summary': result.get('summary', ''),
-                'key_point': result.get('key_point', '')
+                'summary': summary,
+                'key_point': key_point
             }
             
         except Exception as e:
             print(f"⚠️ 要約エラー: {e}")
+            # フォールバック: 英語の本文をそのまま使わず、エラーメッセージを返す
+            # または、短い説明文を返す
             return {
-                'summary': content[:100] if content else '',
+                'summary': '記事の要約を生成できませんでした。詳細はリンクからご確認ください。',
                 'key_point': ''
             }
     
@@ -414,9 +427,22 @@ class WiredBlueskyBotAdvanced:
                         parts.append(summary_text)
                 post_text = " ".join(parts)
         
-        # 最終チェック
+        # 最終チェック（単語の途中で切れないようにする）
         if len(post_text) > 280:
-            post_text = post_text[:277] + "..."
+            # スペースや句読点で切れる位置を探す
+            truncated = post_text[:277]
+            # 最後のスペースや句読点を探す
+            last_space = max(
+                truncated.rfind(' '),
+                truncated.rfind('。'),
+                truncated.rfind('、'),
+                truncated.rfind('.'),
+                truncated.rfind(',')
+            )
+            if last_space > 250:  # 最低限の長さを確保
+                post_text = truncated[:last_space] + "..."
+            else:
+                post_text = truncated + "..."
         
         return post_text
     
