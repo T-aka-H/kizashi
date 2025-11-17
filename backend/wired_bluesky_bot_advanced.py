@@ -37,44 +37,36 @@ class WiredBlueskyBotAdvanced:
         },
     ]
     
-    # 起動時刻（最初の実行時刻を記録）
-    _start_time = None
-    
     def __init__(self):
         """初期化"""
         self.fetcher = ArticleFetcher()
         self.analyzer = GeminiAnalyzer()
         self.poster = SocialPoster()
         self.url_shortener = URLShortener()
-        
-        # 起動時刻を記録（初回のみ）
-        if WiredBlueskyBotAdvanced._start_time is None:
-            WiredBlueskyBotAdvanced._start_time = datetime.now()
-        
         print("✅ WiredBlueskyBotAdvanced初期化完了")
     
     def _get_current_feed_index(self) -> int:
         """
-        現在時刻に基づいて使用するフィードのインデックスを決定
-        3時間ごとにフィードを切り替える
+        現在時刻に基づいて使用するフィードを決定
+        （起動時刻ではなく、絶対時刻で判定、日本時間）
         
         Returns:
             使用するフィードのインデックス（0-3）
         """
-        if WiredBlueskyBotAdvanced._start_time is None:
-            return 0
+        # 日本時間で判定
+        from zoneinfo import ZoneInfo
+        jst = ZoneInfo('Asia/Tokyo')
+        current_hour = datetime.now(jst).hour
         
-        # 起動時刻からの経過時間（時間単位）
-        elapsed_hours = (datetime.now() - WiredBlueskyBotAdvanced._start_time).total_seconds() / 3600
-        
-        # 3時間ごとに切り替え（4つのフィードで12時間で1サイクル）
-        feed_index = int(elapsed_hours // 3) % len(self.WIRED_RSS_FEEDS)
-        
+        # 3時間ごとにフィードを切り替え
+        # 0-2時=ビジネス, 3-5時=AI, 6-8時=オピニオン, 9-11時=サイエンス
+        # 12-14時=ビジネス, 15-17時=AI, 18-20時=オピニオン, 21-23時=サイエンス
+        feed_index = (current_hour // 3) % len(self.WIRED_RSS_FEEDS)
         return feed_index
     
     def fetch_wired_articles(self, max_items: int = 20) -> List[Dict]:
         """
-        WIREDのRSSフィードから記事を取得（3時間ごとに分野を切り替え）
+        WIREDのRSSフィードから記事を取得（3時間ごとに分野を切り替え、日本時間基準）
         
         Args:
             max_items: 取得する最大記事数
