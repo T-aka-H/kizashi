@@ -11,7 +11,7 @@ from article_fetcher import ArticleFetcher
 from gemini_analyzer import GeminiAnalyzer
 from twitter_poster import SocialPoster
 from url_shortener import URLShortener
-from database import SessionLocal, get_recently_posted_urls, mark_article_as_posted, get_posting_history_summary
+from database import SessionLocal, get_recently_posted_urls, mark_article_as_posted
 
 
 class WiredBlueskyBotAdvanced:
@@ -690,11 +690,17 @@ class WiredBlueskyBotAdvanced:
         # 投稿履歴のサマリーを表示（デバッグ用）
         db = SessionLocal()
         try:
-            history = get_posting_history_summary(db, hours=48)
-            print(f"\n📊 過去48時間の投稿履歴:")
-            print(f"   総投稿数: {history['total']}件")
-            if history['latest']:
-                print(f"   最終投稿: {history['latest']}")
+            # get_posting_history_summary が利用可能な場合のみ使用
+            try:
+                from database import get_posting_history_summary
+                history = get_posting_history_summary(db, hours=48)
+                print(f"\n📊 過去48時間の投稿履歴:")
+                print(f"   総投稿数: {history['total']}件")
+                if history['latest']:
+                    print(f"   最終投稿: {history['latest']}")
+            except ImportError:
+                # 関数が存在しない場合はスキップ（後方互換性のため）
+                print(f"\n📊 投稿履歴サマリー機能は利用できません（後方互換性）")
         except Exception as e:
             print(f"⚠️ 投稿履歴の取得エラー: {e}")
         finally:
