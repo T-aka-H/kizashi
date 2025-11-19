@@ -190,3 +190,30 @@ def mark_article_as_posted(db: Session, url: str):
         db.add(article)
         db.commit()
 
+
+def get_posting_history_summary(db: Session, hours: int = 48) -> dict:
+    """
+    投稿履歴のサマリーを取得（デバッグ用）
+    
+    Args:
+        db: データベースセッション
+        hours: 何時間以内の履歴を取得するか（デフォルト: 48時間）
+    
+    Returns:
+        投稿履歴のサマリー辞書
+    """
+    from datetime import timedelta
+    from sqlalchemy import desc
+    
+    cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+    
+    articles = db.query(Article).filter(
+        Article.is_posted == True,
+        Article.posted_at >= cutoff_time
+    ).order_by(desc(Article.posted_at)).all()
+    
+    return {
+        'total': len(articles),
+        'urls': [a.url for a in articles],
+        'latest': articles[0].posted_at if articles else None
+    }
