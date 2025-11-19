@@ -307,7 +307,7 @@ async def root():
 # @app.post("/post-queue/{queue_id}/post", ...) - 削除
 
 
-@app.get("/healthz")
+@app.api_route("/healthz", methods=["GET", "HEAD"])
 async def health_check():
     """
     ヘルスチェックエンドポイント（Render Health Check用）
@@ -316,6 +316,7 @@ async def health_check():
     - アプリが起動していれば常に 200 OK を返す
     - 各コンポーネントの状態も含める（オプション）
     - Render の Health Check Path に設定: /healthz
+    - GET と HEAD メソッドの両方に対応（監視サービス用）
     """
     return {
         "status": "ok",

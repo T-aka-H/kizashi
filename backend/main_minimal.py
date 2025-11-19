@@ -127,9 +127,12 @@ async def root():
     }
 
 
-@app.get("/healthz")
+@app.api_route("/healthz", methods=["GET", "HEAD"])
 async def health_check():
-    """ヘルスチェックエンドポイント（Render用）"""
+    """
+    ヘルスチェックエンドポイント（Render用）
+    - GET と HEAD メソッドの両方に対応（監視サービス用）
+    """
     return {
         "status": "ok",
         "components": {
