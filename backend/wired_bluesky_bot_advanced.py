@@ -11,13 +11,13 @@ from article_fetcher import ArticleFetcher
 from gemini_analyzer import GeminiAnalyzer
 from twitter_poster import SocialPoster
 from url_shortener import URLShortener
-from database import SessionLocal, get_recently_posted_urls, mark_article_as_posted
+from database import SessionLocal, get_recently_posted_urls, mark_article_as_posted, get_posting_history_summary
 
 
 class WiredBlueskyBotAdvanced:
     """WIRED記事をBlueskyに投稿するボット（改良版）"""
     
-    # WIREDのRSSフィード（質重視型、3時間ごとに切り替え）
+    # WIREDのRSSフィード（質重視型、3時間ごとに切り替え、8カテゴリ対応）
     WIRED_RSS_FEEDS = [
         {
             "url": "https://www.wired.com/feed/category/business/rss",
@@ -35,6 +35,22 @@ class WiredBlueskyBotAdvanced:
             "url": "https://www.wired.com/feed/category/science/rss",
             "name": "サイエンス"
         },
+        {
+            "url": "https://www.wired.com/feed/category/gear/rss",
+            "name": "ガジェット"
+        },
+        {
+            "url": "https://www.wired.com/feed/category/culture/rss",
+            "name": "カルチャー"
+        },
+        {
+            "url": "https://www.wired.com/feed/category/security/rss",
+            "name": "セキュリティ"
+        },
+        {
+            "url": "https://www.wired.com/feed/rss",
+            "name": "総合"
+        },
     ]
     
     def __init__(self):
@@ -48,23 +64,21 @@ class WiredBlueskyBotAdvanced:
     def _get_current_feed_index(self) -> int:
         """
         現在時刻に基づいて使用するフィードを決定
-        （起動時刻ではなく、絶対時刻で判定、日本時間）
+        （起動時刻ではなく、絶対時刻で判定、日本時間、8カテゴリ対応）
         
         Returns:
-            使用するフィードのインデックス（0-3）
+            使用するフィードのインデックス（0-7）
         """
         # 日本時間で判定
         from zoneinfo import ZoneInfo
         jst = ZoneInfo('Asia/Tokyo')
         current_hour = datetime.now(jst).hour
         
-        # 3時間ごとにフィードを切り替え
-        # 0-2時=ビジネス, 3-5時=AI, 6-8時=オピニオン, 9-11時=サイエンス
-        # 12-14時=ビジネス, 15-17時=AI, 18-20時=オピニオン, 21-23時=サイエンス
+        # 3時間ごとにフィードを切り替え（8カテゴリ対応）
         feed_index = (current_hour // 3) % len(self.WIRED_RSS_FEEDS)
         return feed_index
     
-    def fetch_wired_articles(self, max_items: int = 20) -> List[Dict]:
+    def fetch_wired_articles(self, max_items: int = 30) -> List[Dict]:
         """
         WIREDのRSSフィードから記事を取得（3時間ごとに分野を切り替え、日本時間基準）
         
@@ -120,7 +134,7 @@ class WiredBlueskyBotAdvanced:
     
     def select_top5_with_gemini(self, articles: List[Dict]) -> List[Dict]:
         """
-        GeminiにTOP5を選定してもらう（過去3時間以内に投稿した記事を除外）
+        GeminiにTOP5を選定してもらう（過去24時間以内に投稿した記事を除外）
         
         Args:
             articles: 記事のリスト
@@ -131,16 +145,29 @@ class WiredBlueskyBotAdvanced:
         if not articles:
             return []
         
-        # 過去3時間以内に投稿した記事を除外
+        # 過去24時間以内に投稿した記事を除外（3時間→24時間に変更）
         db = SessionLocal()
         try:
-            recent_urls = get_recently_posted_urls(db, hours=3)
+            recent_urls = get_recently_posted_urls(db, hours=24)
             if recent_urls:
-                print(f"\n⏰ 過去3時間以内に投稿した記事を除外: {len(recent_urls)}件")
+                print(f"\n⏰ 過去24時間以内に投稿した記事を除外: {len(recent_urls)}件")
+                original_count = len(articles)
+                # 除外される記事を記録（フィルタリング前）
+                excluded_articles = [a for a in articles if a.get('url') in recent_urls]
                 articles = [a for a in articles if a.get('url') not in recent_urls]
+                excluded_count = original_count - len(articles)
+                
+                if excluded_count > 0:
+                    print(f"   除外された記事: {excluded_count}件")
+                    # 除外された記事のタイトルを表示（デバッグ用）
+                    for a in excluded_articles[:5]:  # 最大5件まで表示
+                        print(f"   - {a.get('title', 'N/A')[:50]}...")
+                
                 if not articles:
-                    print("⚠️ すべての記事が過去3時間以内に投稿済みです")
+                    print("⚠️ すべての記事が過去24時間以内に投稿済みです")
                     return []
+            else:
+                print(f"\n📊 過去24時間以内の投稿履歴: なし")
         finally:
             db.close()
         
@@ -652,7 +679,7 @@ class WiredBlueskyBotAdvanced:
         return {"success": success_count, "failed": failed_count}
     
     def run(self):
-        """メイン処理"""
+        """メイン処理（重複チェック強化版）"""
         print(f"\n{'='*60}")
         print(f"🚀 WIRED記事TOP5投稿Bot（改良版）開始")
         jst = ZoneInfo('Asia/Tokyo')
@@ -660,17 +687,32 @@ class WiredBlueskyBotAdvanced:
         print(f"⏰ 実行時刻 (JST): {now_jst.strftime('%Y-%m-%d %H:%M:%S %Z')}")
         print(f"{'='*60}")
         
+        # 投稿履歴のサマリーを表示（デバッグ用）
+        db = SessionLocal()
+        try:
+            history = get_posting_history_summary(db, hours=48)
+            print(f"\n📊 過去48時間の投稿履歴:")
+            print(f"   総投稿数: {history['total']}件")
+            if history['latest']:
+                print(f"   最終投稿: {history['latest']}")
+        except Exception as e:
+            print(f"⚠️ 投稿履歴の取得エラー: {e}")
+        finally:
+            db.close()
+        
         try:
             # 1. WIRED記事を取得
-            articles = self.fetch_wired_articles(max_items=20)
+            articles = self.fetch_wired_articles(max_items=30)  # 20→30に増加
             if not articles:
                 print("⚠️ 記事がありません。終了します。")
                 return
             
-            # 2. GeminiでTOP5を選定
+            # 2. GeminiでTOP5を選定（24時間フィルター適用）
             top5_articles = self.select_top5_with_gemini(articles)
             if not top5_articles:
-                print("⚠️ TOP5の選定に失敗しました。終了します。")
+                print("⚠️ 投稿可能な新規記事がありません。")
+                print("💡 ヒント: RSSフィードの切り替えタイミングを待つか、")
+                print("          異なるカテゴリのフィードを追加してください。")
                 return
             
             # 3. TOP5の記事本文を取得
