@@ -57,8 +57,12 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
     """Basic認証ミドルウェア"""
     
     async def dispatch(self, request: Request, call_next):
+        # OPTIONSリクエスト（CORSプリフライト）は認証不要
+        if request.method == "OPTIONS":
+            return await call_next(request)
+        
         # ヘルスチェックエンドポイントは認証不要
-        if request.url.path == "/" or request.url.path == "/docs" or request.url.path == "/openapi.json":
+        if request.url.path in ["/", "/docs", "/openapi.json", "/healthz", "/health"]:
             return await call_next(request)
         
         # 認証が無効な場合はスキップ

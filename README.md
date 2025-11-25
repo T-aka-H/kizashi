@@ -4,7 +4,7 @@ Gemini APIを使用した記事分析とBluesky自動投稿アプリケーショ
 
 ## 機能
 
-- 📰 記事の自動取得と分析（Gemini API）
+- 📰 記事の自動取得と分析（Gemini API + WIRED RSS）
 - 🔍 テーマ分類、要約、主要ポイント抽出
 - 📤 ソーシャルメディア投稿キュー管理（Bluesky）
 - ✅ 投稿承認フロー
@@ -16,20 +16,27 @@ Gemini APIを使用した記事分析とBluesky自動投稿アプリケーショ
 
 ### ローカル開発
 
+詳細な手順は [LOCAL_SETUP.md](./LOCAL_SETUP.md) を参照してください。
+
 #### バックエンド
 
 ```bash
 cd backend
 pip install -r requirements.txt
 
-# 環境変数を設定
-cp ../.env.example .env
-# .envファイルを編集してAPIキーを設定
+# 環境変数を設定（プロジェクトルートで実行）
+cd ..
+copy .env.example .env  # Windows
+# または
+cp .env.example .env   # macOS/Linux
+
+# .envファイルを編集してGemini APIキーを設定
 
 # サーバー起動
+cd backend
 python main.py
-# または
-uvicorn main:app --reload
+# または（開発モード）
+uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 #### フロントエンド
@@ -41,6 +48,10 @@ npm install
 # 開発サーバー起動
 npm run dev
 ```
+
+**アクセスURL**:
+- フロントエンド: http://localhost:3000
+- APIドキュメント: http://localhost:8000/docs
 
 ### Renderへのデプロイ
 
@@ -81,12 +92,12 @@ cp .env.example .env
 `.env`ファイルを編集：
 
 ```env
-GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_API_KEY=AIzaSyC...
 
 # 投稿モード設定（bluesky, demo）
 POST_MODE=demo
 
-# Bluesky設定
+# Bluesky設定（POST_MODE=blueskyの場合に必要）
 BLUESKY_HANDLE=yourname.bsky.social
 BLUESKY_PASSWORD=xxxx-xxxx-xxxx-xxxx
 ```
@@ -95,8 +106,10 @@ BLUESKY_PASSWORD=xxxx-xxxx-xxxx-xxxx
 
 #### Gemini API
 1. [Google AI Studio](https://makersuite.google.com/app/apikey)にアクセス
-2. APIキーを生成
-3. `.env`に設定
+2. Googleアカウントでログイン
+3. 「Create API Key」をクリック
+4. 生成されたAPIキーをコピー（`AIza...`で始まる文字列）
+5. `.env`に設定
 
 #### Bluesky
 詳細は [BLUESKY_SETUP.md](./BLUESKY_SETUP.md) を参照してください。
@@ -137,8 +150,8 @@ APIドキュメント: http://localhost:8000/docs
 weak-signals-app/
 ├── backend/
 │   ├── main.py                  # FastAPI メインアプリ
-│   ├── gemini_analyzer.py       # Gemini API連携
-│   ├── twitter_poster.py        # X API連携
+│   ├── gemini_analyzer.py       # Gemini API連携（記事分析）
+│   ├── twitter_poster.py        # Bluesky API連携
 │   ├── article_fetcher.py      # 記事取得（RSS/スクレイピング）
 │   ├── database.py              # DB操作
 │   ├── models.py                # データモデル

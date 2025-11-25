@@ -3,7 +3,7 @@
  */
 import axios from 'axios'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8000'
 
 // Basic認証ヘッダーを生成
 const getAuthHeaders = () => {
@@ -186,6 +186,40 @@ export const researchApi = {
     const response = await api.post<ResearchResponse>('/fetch/research', {
       themes,
     })
+    return response.data
+  },
+}
+
+export interface WiredRSSRequest {
+  max_items?: number
+  rss_url?: string
+}
+
+export interface WiredRSSResponse {
+  message: string
+  articles_count: number
+  articles: Article[]
+}
+
+export interface WiredBotTestResponse {
+  status: string
+  message: string
+  timestamp: string
+  note?: string
+}
+
+export const wiredApi = {
+  // WIRED RSSから記事を取得
+  fetchWiredRSS: async (maxItems: number = 20): Promise<WiredRSSResponse> => {
+    const response = await api.post<WiredRSSResponse>('/fetch/wired-rss', {
+      max_items: maxItems,
+    })
+    return response.data
+  },
+
+  // WIRED Botをテスト実行
+  testWiredBot: async (): Promise<WiredBotTestResponse> => {
+    const response = await api.post<WiredBotTestResponse>('/test/wired-bot')
     return response.data
   },
 }

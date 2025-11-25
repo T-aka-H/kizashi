@@ -1,41 +1,33 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { statsApi, Stats, researchApi } from '@/lib/api'
-import { FileText, Send, Clock, Tag, Search, Loader2 } from 'lucide-react'
+import { useState } from 'react' // useEffectは削除（統計情報エンドポイントが存在しないため）
+import { Stats, researchApi, wiredApi } from '@/lib/api' // statsApiは削除（/statsエンドポイントが存在しないため）
+import { FileText, Send, Clock, Tag, Search, Loader2, Rss, Play } from 'lucide-react'
 
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false) // 初期値をfalseに変更（statsは使用しないため）
   const [error, setError] = useState<string | null>(null)
+  const [statsAvailable, setStatsAvailable] = useState(false) // 統計情報エンドポイントは削除されているため、初期値をfalseに
   const [researchLoading, setResearchLoading] = useState(false)
   const [researchThemes, setResearchThemes] = useState('')
   const [researchResult, setResearchResult] = useState<string | null>(null)
+  const [wiredLoading, setWiredLoading] = useState(false)
+  const [wiredResult, setWiredResult] = useState<string | null>(null)
+  const [wiredBotLoading, setWiredBotLoading] = useState(false)
+  const [wiredBotResult, setWiredBotResult] = useState<string | null>(null)
 
-  useEffect(() => {
-    loadStats()
-    // 30秒ごとに更新
-    const interval = setInterval(loadStats, 30000)
-    return () => clearInterval(interval)
-  }, [])
+  // 統計情報エンドポイントは削除されているため、loadStats関数とuseEffectは削除
+  // useEffect(() => {
+  //   loadStats()
+  //   // 統計情報が利用可能な場合のみ30秒ごとに更新
+  //   if (statsAvailable) {
+  //     const interval = setInterval(loadStats, 30000)
+  //     return () => clearInterval(interval)
+  //   }
+  // }, [statsAvailable])
 
-  const loadStats = async () => {
-    try {
-      setLoading(true)
-      const data = await statsApi.getStats()
-      setStats(data)
-      setError(null)
-    } catch (err: any) {
-      // 401エラーの場合は認証が必要（リダイレクトはapi.tsで処理）
-      if (err.response?.status === 401) {
-        setError('認証が必要です。ログインページにリダイレクトします...')
-        return
-      }
-      setError(err.message || '統計情報の取得に失敗しました')
-    } finally {
-      setLoading(false)
-    }
-  }
+  // loadStats関数は削除（/statsエンドポイントが存在しないため）
 
   const handleResearch = async () => {
     if (!researchThemes.trim()) {
@@ -54,8 +46,10 @@ export default function Dashboard() {
         `✅ 取得完了: ${result.processed}件の記事を処理、${result.analyzed}件を分析、${result.queued}件をキューに追加しました`
       )
       
-      // 統計情報を更新
-      await loadStats()
+      // 統計情報エンドポイントは削除されているため、更新しない
+      // if (statsAvailable) {
+      //   await loadStats()
+      // }
       
       // テーマ入力欄をクリア
       setResearchThemes('')
@@ -66,7 +60,58 @@ export default function Dashboard() {
     }
   }
 
-  if (loading && !stats) {
+  const handleWiredRSS = async () => {
+    try {
+      setWiredLoading(true)
+      setError(null)
+      setWiredResult(null)
+      
+      const result = await wiredApi.fetchWiredRSS(20)
+      
+      setWiredResult(
+        `✅ WIRED RSS取得完了: ${result.articles_count}件の記事を取得しました`
+      )
+      
+      // 統計情報エンドポイントは削除されているため、更新しない
+      // if (statsAvailable) {
+      //   await loadStats()
+      // }
+    } catch (err: any) {
+      setError(err.message || 'WIRED RSSの取得に失敗しました')
+    } finally {
+      setWiredLoading(false)
+    }
+  }
+
+  const handleWiredBotTest = async () => {
+    if (!confirm('WIRED Botを実行しますか？実際にBlueskyに投稿されます。')) {
+      return
+    }
+
+    try {
+      setWiredBotLoading(true)
+      setError(null)
+      setWiredBotResult(null)
+      
+      const result = await wiredApi.testWiredBot()
+      
+      setWiredBotResult(
+        `✅ ${result.message}${result.note ? `\n${result.note}` : ''}`
+      )
+      
+      // 統計情報エンドポイントは削除されているため、更新しない
+      // if (statsAvailable) {
+      //   await loadStats()
+      // }
+    } catch (err: any) {
+      setError(err.message || 'WIRED Botの実行に失敗しました')
+    } finally {
+      setWiredBotLoading(false)
+    }
+  }
+
+  // 統計情報の読み込み中で、かつ統計情報が利用可能な場合のみローディング表示
+  if (loading && statsAvailable && !stats) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
@@ -74,19 +119,21 @@ export default function Dashboard() {
     )
   }
 
-  if (error) {
-    return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-        <p className="text-red-800">{error}</p>
-        <button
-          onClick={loadStats}
-          className="mt-2 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-        >
-          再試行
-        </button>
-      </div>
-    )
-  }
+  // エラー表示（統計情報のエラーは表示しない、404の場合は正常な状態として扱う）
+  // 統計情報エンドポイントは削除されているため、このセクションは表示されない
+  // if (error && statsAvailable) {
+  //   return (
+  //     <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+  //       <p className="text-red-800">{error}</p>
+  //       <button
+  //         onClick={loadStats}
+  //         className="mt-2 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+  //       >
+  //         再試行
+  //       </button>
+  //     </div>
+  //   )
+  // }
 
   const statCards = [
     {
@@ -117,11 +164,67 @@ export default function Dashboard() {
 
   return (
     <div>
+      {/* WIRED Botセクション */}
+      <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200 mb-8">
+        <h2 className="text-xl font-bold mb-4 text-gray-900 flex items-center gap-2">
+          <Rss className="text-primary-600" size={24} />
+          WIRED Bot
+        </h2>
+        <div className="space-y-4">
+          <div className="flex gap-4">
+            <button
+              onClick={handleWiredRSS}
+              disabled={wiredLoading}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+            >
+              {wiredLoading ? (
+                <>
+                  <Loader2 className="animate-spin" size={20} />
+                  WIRED RSS取得中...
+                </>
+              ) : (
+                <>
+                  <Rss size={20} />
+                  WIRED RSSから記事を取得
+                </>
+              )}
+            </button>
+            <button
+              onClick={handleWiredBotTest}
+              disabled={wiredBotLoading}
+              className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+            >
+              {wiredBotLoading ? (
+                <>
+                  <Loader2 className="animate-spin" size={20} />
+                  実行中...
+                </>
+              ) : (
+                <>
+                  <Play size={20} />
+                  WIRED Botを実行（投稿）
+                </>
+              )}
+            </button>
+          </div>
+          {wiredResult && (
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-blue-800 whitespace-pre-line">{wiredResult}</p>
+            </div>
+          )}
+          {wiredBotResult && (
+            <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-green-800 whitespace-pre-line">{wiredBotResult}</p>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* 記事取得セクション */}
       <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200 mb-8">
         <h2 className="text-xl font-bold mb-4 text-gray-900 flex items-center gap-2">
           <Search className="text-primary-600" size={24} />
-          Gemini Grounding（Google Search）で記事を取得
+          未来の兆し生成（Gemini Grounding）
         </h2>
         <div className="space-y-4">
           <div>
@@ -166,27 +269,30 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        {statCards.map((card) => {
-          const Icon = card.icon
-          return (
-            <div
-              key={card.title}
-              className="bg-white rounded-lg shadow-md p-6 border border-gray-200"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-gray-600 text-sm font-medium">{card.title}</p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">{card.value}</p>
-                </div>
-                <div className={`${card.color} p-3 rounded-full`}>
-                  <Icon className="text-white" size={24} />
+      {/* 統計情報セクション（利用可能な場合のみ表示） */}
+      {statsAvailable && stats && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {statCards.map((card) => {
+            const Icon = card.icon
+            return (
+              <div
+                key={card.title}
+                className="bg-white rounded-lg shadow-md p-6 border border-gray-200"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-600 text-sm font-medium">{card.title}</p>
+                    <p className="text-3xl font-bold text-gray-900 mt-2">{card.value}</p>
+                  </div>
+                  <div className={`${card.color} p-3 rounded-full`}>
+                    <Icon className="text-white" size={24} />
+                  </div>
                 </div>
               </div>
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      )}
 
       <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
         <h2 className="text-xl font-bold mb-4 text-gray-900">システム状態</h2>

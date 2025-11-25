@@ -1,19 +1,32 @@
 """
 データベース操作
+
+【Render デプロイ対応】
+- 環境変数 DATABASE_URL から接続情報を取得
+- ローカル開発: SQLite (weak_signals.db)
+- Render本番: PostgreSQL (DATABASE_URL が自動設定される)
+- postgres:// → postgresql:// の自動変換対応
 """
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 import os
+import logging
+from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 from models import Base, Article, PostQueue
 
-# データベースURL（環境変数から取得、デフォルトはSQLite）
+# データベースURL（環境変数から取得）
+# - ローカル開発: デフォルトで SQLite を使用
+# - Render: DATABASE_URL が自動的に設定される（PostgreSQL）
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./weak_signals.db")
 
-# PostgreSQL用のURL変換（Renderなどで提供される形式に対応）
+# PostgreSQL用のURL変換（Renderが提供するpostgres://をpostgresql://に変換）
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    logger.info("✅ DATABASE_URL を PostgreSQL 形式に変換しました")
 
 # SQLite用の設定
 if DATABASE_URL.startswith("sqlite"):
@@ -35,9 +48,24 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 def init_db():
-    """データベース初期化"""
-    Base.metadata.create_all(bind=engine)
-    print("✅ データベース初期化完了")
+    """
+    データベース初期化
+    
+    【動作】
+    - テーブルが存在しない場合は自動作成
+    - Render では PostgreSQL に自動接続
+    - ローカルでは SQLite ファイルを作成
+    """
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("✅ データベース初期化完了")
+        
+        # 接続情報をログ出力（セキュリティのため URL は出力しない）
+        db_type = "PostgreSQL" if "postgresql://" in DATABASE_URL else "SQLite"
+        logger.info(f"📊 データベースタイプ: {db_type}")
+    except Exception as e:
+        logger.error(f"⚠️ データベース初期化エラー: {e}", exc_info=True)
+        raise
 
 
 def get_db():
@@ -99,3 +127,93 @@ def get_pending_posts(db: Session):
     """承認待ちの投稿を取得"""
     return db.query(PostQueue).filter(PostQueue.status == "pending").all()
 
+
+def get_recently_posted_urls(db: Session, hours: int = 3):
+    """
+    過去N時間以内に投稿した記事のURLリストを取得
+    
+    Args:
+        db: データベースセッション
+        hours: 何時間以内の記事を取得するか（デフォルト: 3時間）
+    
+    Returns:
+        過去N時間以内に投稿した記事のURLのセット
+    """
+    from datetime import timedelta
+    cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+    
+    recent_articles = db.query(Article).filter(
+        Article.is_posted == True,
+        Article.posted_at >= cutoff_time
+    ).all()
+    
+    return {article.url for article in recent_articles}
+
+
+def get_latest_posted_article(db: Session):
+    """
+    最新の投稿記事を取得
+    
+    Args:
+        db: データベースセッション
+    
+    Returns:
+        最新の投稿記事（Articleオブジェクト）またはNone
+    """
+    from sqlalchemy import desc
+    return db.query(Article).filter(
+        Article.is_posted == True
+    ).order_by(desc(Article.posted_at)).first()
+
+
+def mark_article_as_posted(db: Session, url: str):
+    """
+    記事を投稿済みとしてマーク
+    
+    Args:
+        db: データベースセッション
+        url: 記事のURL
+    """
+    article = db.query(Article).filter(Article.url == url).first()
+    if article:
+        article.is_posted = True
+        article.posted_at = datetime.utcnow()
+        db.commit()
+    else:
+        # 記事が存在しない場合は新規作成
+        article = Article(
+            url=url,
+            title="",  # タイトルは後で更新可能
+            is_posted=True,
+            posted_at=datetime.utcnow()
+        )
+        db.add(article)
+        db.commit()
+
+
+def get_posting_history_summary(db: Session, hours: int = 48) -> dict:
+    """
+    投稿履歴のサマリーを取得（デバッグ用）
+    
+    Args:
+        db: データベースセッション
+        hours: 何時間以内の履歴を取得するか（デフォルト: 48時間）
+    
+    Returns:
+        投稿履歴のサマリー辞書
+    """
+    from datetime import timedelta
+    from sqlalchemy import desc
+    
+    cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+    
+    articles = db.query(Article).filter(
+        Article.is_posted == True,
+        Article.posted_at >= cutoff_time
+    ).order_by(desc(Article.posted_at)).all()
+    
+    return {
+        'total': len(articles),
+        'urls': [a.url for a in articles],
+        'latest': articles[0].posted_at if articles else None
+    }

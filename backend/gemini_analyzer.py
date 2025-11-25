@@ -3,13 +3,17 @@ Gemini APIを使用した記事分析
 """
 import os
 import json
+import re
 import google.generativeai as genai
 from typing import Dict, Optional
 
-# Gemini API設定
+# Gemini API設定（環境変数から取得）
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY環境変数が設定されていません")
+    raise ValueError(
+        "GEMINI_API_KEY環境変数が設定されていません。"
+        "Render の Environment Variables で設定してください。"
+    )
 
 genai.configure(api_key=GEMINI_API_KEY)
 
@@ -17,7 +21,7 @@ genai.configure(api_key=GEMINI_API_KEY)
 class GeminiAnalyzer:
     """Gemini APIを使用した記事分析クラス"""
     
-    def __init__(self, model_name: str = "gemini-pro"):
+    def __init__(self, model_name: str = "gemini-2.5-flash"):
         self.model = genai.GenerativeModel(model_name)
     
     def analyze_article(self, title: str, content: str, url: str = None) -> Dict:
@@ -188,4 +192,76 @@ URL: {url or "なし"}
                 if len(fallback) > 280:
                     fallback = fallback[:277] + "..."
             return fallback
+    
+    def generate_future_signal(self, theme: str) -> Dict[str, str]:
+        """
+        テーマに基づいて「未来の兆し」を生成（実際の記事は不要）
+        
+        Args:
+            theme: テーマ（例: "AI", "生成AI", "AIエージェント"）
+        
+        Returns:
+            {"title": "タイトル", "summary": "要約", "future_signal": "未来の兆し", "theme": "テーマ"}
+        """
+        prompt = f"""あなたは未来洞察の専門家です。以下のテーマに基づいて、「未来の兆し（Weak Signal）」を生成してください。
+
+テーマ: {theme}
+
+要件:
+- すべて日本語で記述
+- 実際の記事に基づく必要はなく、テーマから推論した未来の兆しを生成
+- 誰にでも予測できる明白な内容ではなく、注意深く考察しなければ見落としてしまうような、ユニークかつ微かな「Weak Signal」を提示
+- 一見無関係に見える事象が、実は未来の兆候を示している、といった『発見』や『仮説』を意識
+
+以下のJSON形式で出力してください（余計な説明やマークダウンは不要、JSONのみ）:
+{{
+    "title": "このテーマに関連する未来の兆しを示す短いタイトル（30文字以内）",
+    "summary": "この未来の兆しについての簡潔な説明（100-150文字）",
+    "future_signal": "このテーマから読み取れる未来の兆し・示唆・発見（150字以内）"
+}}"""
+        
+        try:
+            # JSON出力を強制
+            response = self.model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    response_mime_type="application/json"
+                )
+            )
+            
+            # JSONを直接パース
+            response_text = response.text.strip()
+            
+            # ```json```で囲まれている場合の処理
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0].strip()
+            
+            result = json.loads(response_text)
+            
+            # 必須フィールドの検証
+            title = result.get("title", "").strip()
+            summary = result.get("summary", "").strip()
+            future_signal = result.get("future_signal", "").strip()
+            
+            # 空の場合は例外を発生
+            if not title or not summary or not future_signal:
+                raise ValueError(f"不完全なJSONレスポンス: title={bool(title)}, summary={bool(summary)}, future_signal={bool(future_signal)}")
+            
+            return {
+                "title": title,
+                "summary": summary,
+                "future_signal": future_signal,
+                "theme": theme
+            }
+            
+        except json.JSONDecodeError as e:
+            print(f"⚠️ JSON解析エラー: {e}")
+            print(f"レスポンステキスト: {response_text if 'response_text' in locals() else 'N/A'}")
+            raise ValueError(f"JSON解析に失敗しました: {e}")
+        except Exception as e:
+            print(f"⚠️ 未来の兆し生成エラー: {e}")
+            # エラー時は例外を再発生させて呼び出し側で処理をスキップ
+            raise
 
