@@ -19,6 +19,11 @@ from auth import BasicAuthMiddleware, AUTH_ENABLED, verify_post_password
 from models import Article, PostQueue
 from scheduler import ArticleScheduler
 import threading
+import logging
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
+
+logger = logging.getLogger(__name__)
 
 # FastAPIアプリ初期化
 app = FastAPI(title="Weak Signals App", version="1.0.0")
@@ -54,17 +59,44 @@ except Exception as e:
     print(f"⚠️ ソーシャルポスター初期化エラー: {e}")
     poster = None
 
-# スケジューラーの初期化と起動（バックグラウンド）
-try:
-    scheduler = ArticleScheduler()
-    # スケジューラーをバックグラウンドスレッドで起動
-    scheduler_thread = threading.Thread(target=scheduler.run_scheduler, args=(15,), daemon=True)
-    scheduler_thread.start()
-    print("✅ スケジューラーをバックグラウンドで起動しました（15分間隔）")
-except Exception as e:
-    print(f"⚠️ スケジューラー起動エラー: {e}")
-    import traceback
-    traceback.print_exc()
+# APSchedulerの初期化
+apscheduler = BackgroundScheduler()
+
+# ArticleSchedulerのインスタンス（既存のロジックを使用）
+article_scheduler = ArticleScheduler()
+
+def job_listener(event):
+    """ジョブの実行を監視"""
+    if event.exception:
+        logger.error(f"Job crashed: {event.exception}")
+        # スケジューラーを再起動
+        if not apscheduler.running:
+            logger.info("Restarting scheduler...")
+            try:
+                apscheduler.start()
+            except Exception as e:
+                logger.error(f"Failed to restart scheduler: {e}")
+
+# リスナーを追加
+apscheduler.add_listener(job_listener, EVENT_JOB_ERROR | EVENT_JOB_EXECUTED)
+
+# ジョブを追加（15分間隔で記事取得・分析）
+apscheduler.add_job(
+    article_scheduler.fetch_and_analyze_articles,
+    'interval',
+    minutes=15,
+    id='fetch_and_analyze',
+    replace_existing=True
+)
+
+# ジョブを追加（15分間隔で投稿）
+apscheduler.add_job(
+    article_scheduler.post_approved_articles,
+    'interval',
+    minutes=15,
+    id='post_articles',
+    replace_existing=True
+)
 
 # 記事取得のインスタンス
 article_fetcher = ArticleFetcher()
@@ -269,10 +301,39 @@ async def post_to_social(
     return {"message": "投稿完了", "post_id": result.get("post_id"), "platform": result.get("platform")}
 
 
+@app.on_event("startup")
+async def startup_event():
+    """起動時にスケジューラーを開始"""
+    if not apscheduler.running:
+        try:
+            apscheduler.start()
+            logger.info("✅ Scheduler started")
+        except Exception as e:
+            logger.error(f"Failed to start scheduler: {e}")
+
+
 @app.get("/healthz")
 async def health_check():
-    """軽量なヘルスチェックエンドポイント（Render用）"""
-    return {"status": "ok"}
+    """ヘルスチェック（スケジューラー自動再起動付き）"""
+    scheduler_status = "running" if apscheduler.running else "stopped"
+    
+    # スケジューラーが停止していたら自動再起動
+    if not apscheduler.running:
+        try:
+            apscheduler.start()
+            scheduler_status = "restarted"
+            logger.warning("⚠️ Scheduler was stopped, restarted automatically")
+        except Exception as e:
+            logger.error(f"Failed to restart scheduler: {e}")
+    
+    return {
+        "status": "ok",
+        "components": {
+            "analyzer": "available",
+            "poster": "available" if poster else "unavailable",
+            "scheduler": scheduler_status
+        }
+    }
 
 
 @app.get("/stats")
@@ -587,6 +648,18 @@ async def fetch_and_analyze(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"エラー: {str(e)}")
+
+
+@app.get("/scheduler/check-and-restart")
+async def check_and_restart_scheduler():
+    """スケジューラーをチェックして必要なら再起動"""
+    if not apscheduler.running:
+        try:
+            apscheduler.start()
+            return {"status": "restarted", "message": "Scheduler was restarted"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    return {"status": "ok", "message": "Scheduler is running"}
 
 
 if __name__ == "__main__":
